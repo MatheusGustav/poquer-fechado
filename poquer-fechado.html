@@ -1,0 +1,2610 @@
+<title>Pôquer Fechado com Claude</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;0,800;1,400;1,500&family=Limelight&display=swap">
+<style>
+/* Layout: mesa 3D em tela cheia; placar preso no alto, balão do Claude preso à cadeira dele, barra de jogadas embaixo, treino ao lado (tela larga) ou acima das jogadas (celular). Visual único, de bar à noite. */
+:root {
+  --noite: #0d0a08;
+  --couro: #1a1310;
+  --couro-2: #2a1f19;
+  --marfim: #f1e6cf;
+  --fumo: #a89a86;
+  --latao: #c9a25a;
+  --latao-claro: #e8cc8e;
+  --brasa: #ee7436;
+  --brasa-escura: #a4461c;
+  --vinho: #9b3340;
+  --vinho-claro: #f2c6cb;
+  --papel: #f4ead6;
+  --tinta: #1d1612;
+  --ok: #8fcf8c;
+  --linha: rgba(201, 162, 90, 0.38);
+  --vidro: rgba(16, 12, 10, 0.88);
+  --f-titulo: "Limelight", "Bodoni Moda", Didot, Georgia, serif;
+  --f-texto: "Alegreya Sans", "Gill Sans", "Trebuchet MS", system-ui, sans-serif;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; overflow: hidden;
+  background: var(--noite); color: var(--marfim);
+  font-family: var(--f-texto); font-size: 16px; line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+}
+#cena { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; opacity: 0; transition: opacity 0.8s; }
+body.pronto #cena { opacity: 1; }
+button { font: inherit; color: inherit; }
+b, strong { font-weight: 800; }
+.rotulo { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--fumo); }
+
+/* Placar */
+.placar {
+  position: fixed; inset: 0 0 auto; z-index: 5; pointer-events: none;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px); padding-bottom: 22px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: linear-gradient(to bottom, rgba(11, 8, 7, 0.92), rgba(11, 8, 7, 0));
+}
+.placar-in { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto 1fr auto; align-items: end; gap: 8px 24px; }
+.conta { display: grid; gap: 1px; min-width: 0; }
+.conta b { font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.conta.pote { text-align: center; }
+.conta.pote b { font-size: 26px; color: var(--latao-claro); }
+.conta.claude { text-align: right; }
+.ferramentas { display: flex; gap: 6px; pointer-events: auto; }
+.mini {
+  background: rgba(26, 19, 16, 0.85); border: 1px solid var(--linha); color: var(--marfim);
+  padding: 7px 12px; border-radius: 4px; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; cursor: pointer;
+}
+.mini:hover { border-color: var(--latao); }
+.mini[aria-pressed="false"] { color: var(--fumo); text-decoration: line-through; }
+@media (max-width: 640px) {
+  .placar-in { grid-template-columns: 1fr auto 1fr; }
+  .ferramentas { grid-column: 1 / -1; grid-row: 1; justify-content: flex-end; }
+  .conta b { font-size: 20px; }
+  .conta.pote b { font-size: 22px; }
+}
+
+/* Balão do Claude */
+.balao {
+  position: fixed; left: 0; top: 0; z-index: 4; pointer-events: none; will-change: transform;
+  width: max-content; max-width: min(300px, calc(100vw - 32px));
+  background: var(--papel); color: var(--tinta);
+  border-radius: 14px; padding: 9px 14px 11px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.balao::after {
+  content: ""; position: absolute; left: var(--cauda, 50%); bottom: -8px; width: 16px; height: 16px;
+  background: var(--papel); transform: translateX(-50%) rotate(45deg); border-radius: 3px;
+}
+/* Ao lado do boneco, pra não tampar a cara dele: o rabinho sai da lateral. */
+.balao[data-lado="dir"]::after, .balao[data-lado="esq"]::after { left: 0; bottom: auto; top: var(--cauda-y, 50%); transform: translate(-50%, -50%) rotate(45deg); }
+.balao[data-lado="esq"]::after { left: 100%; }
+.balao[data-lado="baixo"]::after { bottom: auto; top: -8px; }
+.balao-quem { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brasa-escura); }
+.balao-acao { letter-spacing: 0.06em; color: var(--tinta); opacity: 0.7; }
+.balao p { margin: 3px 0 0; font-size: 17px; line-height: 1.3; font-style: italic; }
+.balao p:empty { display: none; }
+.pontos { display: inline-flex; gap: 5px; padding: 6px 0 2px; }
+.pontos i { width: 7px; height: 7px; border-radius: 50%; background: var(--tinta); opacity: 0.25; animation: ponto 1.2s infinite; }
+.pontos i:nth-child(2) { animation-delay: 0.2s; }
+.pontos i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ponto { 0%, 100% { opacity: 0.2; transform: translateY(0); } 40% { opacity: 0.85; transform: translateY(-3px); } }
+
+/* Aviso */
+.aviso {
+  position: fixed; z-index: 30; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top, 0px) + 86px); width: max-content; max-width: calc(100vw - 32px);
+  background: var(--couro-2); border: 1px solid var(--brasa); color: var(--marfim);
+  padding: 10px 16px; border-radius: 8px; font-size: 15px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Treino */
+.treino {
+  position: fixed; z-index: 6; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--alt-jogadas, 120px) + 8px); width: min(560px, calc(100vw - 32px));
+  max-height: 36vh; overflow: auto;
+  background: var(--vidro); border: 1px solid var(--linha); border-radius: 10px;
+  padding: 12px 16px 14px; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+}
+.treino p { margin: 4px 0 0; font-size: 17px; line-height: 1.45; max-width: 60ch; }
+.treino b { color: var(--latao-claro); }
+.treino-botoes { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.treino-botoes:empty { display: none; }
+@media (min-width: 960px) {
+  .treino {
+    left: max(16px, env(safe-area-inset-left, 0px)); bottom: auto; top: 50%; transform: translateY(-50%);
+    width: 310px; max-height: calc(100vh - 260px);
+  }
+}
+
+/* Jogadas */
+.jogadas {
+  position: fixed; inset: auto 0 0; z-index: 5;
+  padding-top: 30px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: linear-gradient(to top, rgba(11, 8, 7, 0.94) 45%, rgba(11, 8, 7, 0));
+  pointer-events: none;
+}
+.jogadas-in { max-width: 920px; margin: 0 auto; display: grid; gap: 8px; justify-items: center; pointer-events: auto; }
+.resultado { text-align: center; display: grid; gap: 2px; }
+.resultado h2 { margin: 0; font-family: var(--f-titulo); font-weight: 400; font-size: clamp(24px, 5vw, 34px); line-height: 1.1; color: var(--latao-claro); text-wrap: balance; }
+.resultado p { margin: 0; font-size: 15px; }
+.estado { margin: 0; font-size: 15px; color: var(--fumo); text-align: center; min-height: 1.4em; text-wrap: balance; }
+.estado strong { color: var(--marfim); }
+.botoes { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: stretch; }
+.btn {
+  display: inline-grid; align-content: center; justify-items: center; gap: 1px;
+  min-height: 52px; min-width: 104px; padding: 8px 18px; border-radius: 6px;
+  border: 1px solid var(--linha); background: var(--couro-2); color: var(--marfim);
+  cursor: pointer; font-weight: 800; font-size: 16px; letter-spacing: 0.02em;
+  transition: transform 0.12s, border-color 0.12s, background 0.12s;
+}
+.btn small { font-size: 11.5px; font-weight: 500; color: var(--fumo); }
+.btn:hover:not(:disabled) { border-color: var(--latao); transform: translateY(-1px); }
+.btn.ouro { background: linear-gradient(180deg, #e2c27e, #b98f45); color: #20160d; border-color: var(--latao-claro); }
+.btn.ouro small { color: rgba(32, 22, 13, 0.72); }
+.btn.vinho { border-color: rgba(155, 51, 64, 0.85); color: var(--vinho-claro); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+.btn.guia { animation: pulso 1.6s infinite; }
+@keyframes pulso { 0%, 100% { box-shadow: 0 0 0 0 rgba(232, 204, 142, 0); } 50% { box-shadow: 0 0 0 6px rgba(232, 204, 142, 0.28); } }
+.btn:focus-visible, .mini:focus-visible, .passo:focus-visible { outline: 2px solid var(--latao-claro); outline-offset: 2px; }
+.grupo { display: inline-flex; gap: 6px; align-items: stretch; }
+.valor { display: inline-flex; align-items: center; border: 1px solid var(--linha); border-radius: 6px; background: var(--couro); }
+.passo { width: 38px; height: 100%; min-height: 50px; background: none; border: 0; color: var(--marfim); font-size: 22px; cursor: pointer; }
+.passo:disabled { opacity: 0.3; cursor: not-allowed; }
+.valor output { min-width: 3.2ch; text-align: center; font-weight: 800; font-size: 20px; font-variant-numeric: tabular-nums; }
+@media (max-width: 480px) {
+  .btn { min-width: 0; padding: 8px 12px; }
+  .botoes { gap: 8px; }
+}
+
+/* Tela de início */
+.tela {
+  position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; overflow: auto;
+  padding-block: 32px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: radial-gradient(ellipse at 50% 45%, rgba(13, 10, 8, 0.45), rgba(13, 10, 8, 0.9) 70%);
+}
+.tela-in { width: min(560px, 100%); }
+.sobre { margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.22em; text-transform: uppercase; color: var(--brasa); }
+.tela h1 {
+  margin: 8px 0 16px; font-family: var(--f-titulo); font-weight: 400; line-height: 0.92;
+  font-size: clamp(56px, 14vw, 108px); color: var(--latao-claro); text-wrap: balance;
+  text-shadow: 0 0 28px rgba(238, 116, 54, 0.28);
+}
+.lead { margin: 0; font-size: 19px; max-width: 34ch; }
+.acoes-inicio { display: flex; flex-wrap: wrap; gap: 12px; margin: 24px 0 18px; }
+.acoes-inicio .btn { min-width: 170px; }
+.status-claude { margin: 0 0 6px; display: flex; gap: 8px; align-items: baseline; font-size: 14px; color: var(--fumo); }
+.status-claude .ponto { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fumo); transform: translateY(-1px); }
+.status-claude[data-estado="pronto"] .ponto, .status-claude[data-estado="ok"] .ponto { background: var(--ok); }
+.status-claude[data-estado="negado"] .ponto { background: var(--brasa); }
+.miudo { margin: 0; font-size: 13px; color: var(--fumo); }
+
+/* Lista das mãos */
+.modal {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(5, 4, 3, 0.72);
+  padding-block: 24px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.modal-in {
+  width: min(580px, 100%); max-height: 100%; overflow: auto;
+  background: var(--couro); border: 1px solid var(--linha); border-radius: 12px; padding: 18px 20px 0;
+}
+.modal-rodape { position: sticky; bottom: 0; display: grid; gap: 10px; justify-items: start; padding: 10px 0 18px; background: var(--couro); border-top: 1px solid var(--linha); }
+.modal h2 { margin: 0; font-family: var(--f-titulo); font-weight: 400; font-size: 26px; color: var(--latao-claro); text-wrap: balance; }
+.nota-treino { margin: 10px 0 0; padding: 10px 12px; border-left: 3px solid var(--latao); background: rgba(201, 162, 90, 0.08); font-size: 16px; }
+.nota-treino b { color: var(--latao-claro); }
+.lista-maos { list-style: none; counter-reset: m; margin: 12px 0; padding: 0; display: grid; gap: 4px; }
+.lista-maos li {
+  counter-increment: m; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto;
+  grid-template-areas: "n nome cartas" "n desc cartas"; gap: 0 12px; align-items: center;
+  padding: 5px 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.03);
+}
+.lista-maos li::before { content: counter(m); grid-area: n; font-family: var(--f-titulo); color: var(--latao); font-size: 18px; }
+.lista-maos li.destaque { outline: 1px solid var(--latao); background: rgba(201, 162, 90, 0.1); }
+.mao-nome { grid-area: nome; font-weight: 800; }
+.mao-desc { grid-area: desc; font-size: 14px; color: var(--fumo); }
+.mao-cartas { grid-area: cartas; display: flex; gap: 6px; font-weight: 800; white-space: nowrap; }
+.vermelho { color: #e2545e; }
+.nota { margin: 0; font-size: 14px; color: var(--fumo); }
+@media (max-width: 480px) {
+  .lista-maos li { grid-template-columns: 26px minmax(0, 1fr); grid-template-areas: "n nome" "n desc" "n cartas"; }
+  .mao-cartas { margin-top: 3px; }
+}
+
+.erro { position: fixed; inset: auto 16px 16px; z-index: 40; padding: 12px 16px; border-radius: 8px; background: var(--couro-2); border: 1px solid var(--brasa); }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn.guia, .pontos i { animation: none; }
+  #cena { transition: none; }
+}
+</style>
+
+<canvas id="cena" aria-label="Mesa de pôquer em 3D"></canvas>
+
+<header class="placar" id="placar" hidden>
+  <div class="placar-in">
+    <div class="conta"><span class="rotulo">Você</span><b id="fichas-voce">1.000</b></div>
+    <div class="conta pote"><span class="rotulo">Pote</span><b id="fichas-pote">0</b></div>
+    <div class="conta claude"><span class="rotulo" id="rotulo-claude">Claude</span><b id="fichas-claude">1.000</b></div>
+    <nav class="ferramentas" aria-label="Opções">
+      <button class="mini" id="bt-maos" type="button">Mãos</button>
+      <button class="mini" id="bt-som" type="button" aria-pressed="true">Jazz</button>
+      <button class="mini" id="bt-menu" type="button">Menu</button>
+    </nav>
+  </div>
+</header>
+
+<div class="balao" id="balao" hidden aria-live="polite">
+  <div class="balao-quem"><span id="balao-nome">Claude</span><span class="balao-acao" id="balao-acao"></span></div>
+  <p id="balao-fala"></p>
+</div>
+
+<div class="aviso" id="aviso" role="status" hidden></div>
+
+<section class="treino" id="treino" hidden aria-live="polite">
+  <p class="rotulo" id="treino-passo">Treino</p>
+  <p id="treino-texto"></p>
+  <div class="treino-botoes" id="treino-botoes"></div>
+</section>
+
+<footer class="jogadas" id="jogadas" hidden>
+  <div class="jogadas-in">
+    <div class="resultado" id="resultado" hidden>
+      <h2 id="resultado-titulo"></h2>
+      <p id="resultado-linha"></p>
+    </div>
+    <p class="rotulo" id="fase"></p>
+    <p class="estado" id="estado" aria-live="polite"></p>
+    <div class="botoes" id="botoes"></div>
+  </div>
+</footer>
+
+<div class="tela" id="inicio">
+  <div class="tela-in">
+    <p class="sobre">Mesa de bar · jazz no fundo</p>
+    <h1>Pôquer<br>Fechado</h1>
+    <p class="lead">Cinco cartas na mão, uma troca e duas rodadas de aposta. Do outro lado da mesa, o Claude.</p>
+    <div class="acoes-inicio">
+      <button class="btn" id="bt-continuar" type="button" hidden>Continuar a partida</button>
+      <button class="btn ouro" id="bt-treino" type="button"><span>Aprender jogando</span><small>uma mão de treino guiada</small></button>
+      <button class="btn" id="bt-valer" type="button"><span>Jogar pra valer</span><small>contra o Claude</small></button>
+    </div>
+    <p class="status-claude" id="status-claude" data-estado="procurando"><span class="ponto"></span><span id="status-claude-txt">Procurando o Claude…</span></p>
+    <p class="miudo">Fichas de mentira. Cada um começa com 1.000, pingo de 10, apostas de 10 a 100.</p>
+  </div>
+</div>
+
+<div class="modal" id="modal-maos" hidden role="dialog" aria-modal="true" aria-labelledby="maos-titulo">
+  <div class="modal-in">
+    <h2 id="maos-titulo">Mãos, da mais forte pra mais fraca</h2>
+    <p class="nota-treino" id="maos-treino" hidden></p>
+    <ol class="lista-maos" id="lista-maos"></ol>
+    <div class="modal-rodape">
+      <p class="nota">Com o baralho do 7 ao Ás o flush sai menos que o full, por isso vale mais. O Ás também fecha a sequência mais baixa: A-7-8-9-10.</p>
+      <button class="btn ouro" id="bt-fechar-maos" type="button">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="erro" id="erro3d" hidden>Não consegui montar a mesa em 3D neste navegador. Confira a internet e se o navegador tem aceleração gráfica ligada.</div>
+
+<script>
+// Se algo impedir o jogo de abrir, escreve o motivo na tela em vez de ficar "procurando".
+(function () {
+  var ultimo = '';
+  function mostra(msg) {
+    ultimo = String(msg || 'erro sem mensagem').slice(0, 240);
+    var el = document.getElementById('status-claude-txt');
+    if (el && !window.__jogoRodando) { el.textContent = 'O jogo não abriu: ' + ultimo; el.parentNode.dataset.estado = 'negado'; }
+  }
+  window.addEventListener('error', function (e) {
+    var t = e.target;
+    mostra(e.message || (t && (t.src || t.href) ? 'falhou ao baixar ' + (t.src || t.href) : 'erro'));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) { mostra(e.reason && (e.reason.message || e.reason)); });
+  document.addEventListener('securitypolicyviolation', function (e) { mostra('bloqueado pelo claude.ai: ' + e.blockedURI + ' (' + e.violatedDirective + ')'); });
+  setTimeout(function () { if (!window.__jogoRodando) mostra(ultimo || 'o código do jogo não começou a rodar em 15 segundos'); }, 15000);
+})();
+</script>
+<script>
+// Regras do pôquer fechado (Copag), para dois jogadores: 0 = você, 1 = Claude.
+(function (root) {
+  'use strict';
+
+  const ANTE = 10, MIN_BET = 10, MAX_BET = 100, STEP = 10, MAX_REPIQUES = 3, START = 1000, MAX_TROCA = 3;
+  const SUITS = ['s', 'h', 'd', 'c'];
+  const SUIT_SYM = { s: '♠', h: '♥', d: '♦', c: '♣' };
+  const SUIT_NOME = { s: 'espadas', h: 'copas', d: 'ouros', c: 'paus' };
+  const RANK_TXT = { 7: '7', 8: '8', 9: '9', 10: '10', 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
+  const RANK_NOME = { 7: ['sete', 'setes'], 8: ['oito', 'oitos'], 9: ['nove', 'noves'], 10: ['dez', 'dez'], 11: ['valete', 'valetes'], 12: ['dama', 'damas'], 13: ['rei', 'reis'], 14: ['ás', 'ases'] };
+  const CAT_NOME = ['Carta alta', 'Par', 'Dois pares', 'Trinca', 'Sequência', 'Full', 'Flush', 'Quadra', 'Straight flush'];
+
+  function rand() {
+    const c = root.crypto;
+    if (c && c.getRandomValues) { const a = new Uint32Array(1); c.getRandomValues(a); return a[0] / 4294967296; }
+    return Math.random();
+  }
+  const card = (r, s) => ({ r, s, id: r + s });
+  function makeDeck() { const d = []; for (const s of SUITS) for (let r = 7; r <= 14; r++) d.push(card(r, s)); return d; }
+  function shuffle(arr, rng = rand) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+  const cardTxt = (c) => RANK_TXT[c.r] + SUIT_SYM[c.s];
+
+  // Pares e trincas juntos, do maior pro menor.
+  function sortHand(hand) {
+    const cnt = {};
+    for (const c of hand) cnt[c.r] = (cnt[c.r] || 0) + 1;
+    return hand.sort((a, b) => (cnt[b.r] - cnt[a.r]) || (b.r - a.r) || (SUITS.indexOf(a.s) - SUITS.indexOf(b.s)));
+  }
+
+  const sing = (r) => RANK_NOME[r][0], plur = (r) => RANK_NOME[r][1];
+  const ate = (r) => (r === 12 ? 'a ' : 'o ') + sing(r);
+
+  function evaluate(cards) {
+    const rs = cards.map((c) => c.r).sort((a, b) => b - a);
+    const counts = new Map();
+    for (const r of rs) counts.set(r, (counts.get(r) || 0) + 1);
+    const groups = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+    const flush = cards.every((c) => c.s === cards[0].s);
+    let top = 0;
+    if (counts.size === 5) {
+      if (rs[0] - rs[4] === 4) top = rs[0];
+      else if (rs.join() === '14,10,9,8,7') top = 10; // Ás fazendo o papel do 6
+    }
+    let cat, tb;
+    if (top && flush) { cat = 8; tb = [top]; }
+    else if (groups[0][1] === 4) { cat = 7; tb = [groups[0][0], groups[1][0]]; }
+    else if (flush) { cat = 6; tb = rs; }
+    else if (groups[0][1] === 3 && groups[1][1] === 2) { cat = 5; tb = [groups[0][0], groups[1][0]]; }
+    else if (top) { cat = 4; tb = [top]; }
+    else if (groups[0][1] === 3) { cat = 3; tb = groups.map((g) => g[0]); }
+    else if (groups[0][1] === 2 && groups[1][1] === 2) { cat = 2; tb = groups.map((g) => g[0]); }
+    else if (groups[0][1] === 2) { cat = 1; tb = groups.map((g) => g[0]); }
+    else { cat = 0; tb = rs; }
+    return { cat, tb, score: [cat, ...tb], name: handName(cat, tb, cards[0].s) };
+  }
+
+  function handName(cat, tb, suit) {
+    switch (cat) {
+      case 8: return tb[0] === 14 ? 'Royal straight flush' : `Straight flush até ${ate(tb[0])}`;
+      case 7: return `Quadra de ${plur(tb[0])}`;
+      case 6: return `Flush de ${SUIT_NOME[suit]}`;
+      case 5: return `Full: trinca de ${plur(tb[0])} e par de ${plur(tb[1])}`;
+      case 4: return `Sequência até ${ate(tb[0])}`;
+      case 3: return `Trinca de ${plur(tb[0])}`;
+      case 2: return `Dois pares: ${plur(tb[0])} e ${plur(tb[1])}`;
+      case 1: return `Par de ${plur(tb[0])}`;
+      default: return `Carta alta: ${sing(tb[0])}`;
+    }
+  }
+
+  function compare(a, b) {
+    for (let k = 0; k < Math.max(a.length, b.length); k++) {
+      const d = (a[k] || 0) - (b[k] || 0);
+      if (d) return d;
+    }
+    return 0;
+  }
+
+  function normAcao(a) {
+    const t = String(a || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    if (/^(mesa|check|pass|bato|bater)/.test(t)) return 'mesa';
+    if (/^(repic|raise|aument|sub)/.test(t)) return 'repicar';
+    if (/^(apost|bet|abr)/.test(t)) return 'apostar';
+    if (/^(pag|call|acompanh|vejo)/.test(t)) return 'pagar';
+    if (/^(sai|fold|corr|desist|larg)/.test(t)) return 'sair';
+    return t;
+  }
+
+  // Transforma qualquer pedido numa jogada permitida.
+  function sanitize(a, L) {
+    let acao = normAcao(a && a.acao);
+    let valor = Math.round(Number(a && a.valor) || 0);
+    const tem = (x) => L.acoes.includes(x);
+    if (!tem(acao)) {
+      if (acao === 'mesa' && tem('pagar')) acao = 'pagar';
+      else if (acao === 'pagar' && tem('mesa')) acao = 'mesa';
+      else if (acao === 'apostar' && tem('repicar')) acao = 'repicar';
+      else if (acao === 'repicar' && tem('apostar')) acao = 'apostar';
+      else if (acao === 'sair' && tem('mesa')) acao = 'mesa';
+      else acao = tem('mesa') ? 'mesa' : 'pagar';
+    }
+    if (acao === 'apostar' || acao === 'repicar') {
+      valor = Math.round(valor / STEP) * STEP || L.min;
+      valor = Math.max(L.min, Math.min(L.max, valor));
+    } else valor = 0;
+    return { acao, valor };
+  }
+
+  class Mesa {
+    constructor(opts = {}) {
+      this.stacks = opts.stacks ? opts.stacks.slice() : [START, START];
+      this.dealer = opts.dealer != null ? opts.dealer : (rand() < 0.5 ? 0 : 1);
+      this.handNo = 0;
+      this.history = [];
+      this.h = null;
+    }
+    get over() { return this.stacks[0] <= 0 || this.stacks[1] <= 0; }
+
+    startHand(deck) {
+      const d = this.dealer, first = 1 - d;
+      const h = this.h = {
+        no: ++this.handNo, dealer: d, first, deck: deck.slice(), hands: [[], []], pot: 0, antes: [0, 0],
+        log: [], trocas: [null, null], phase: 'bet1', round: null, aggressor1: null, folded: null, result: null,
+      };
+      const a = Math.min(ANTE, this.stacks[0], this.stacks[1]);
+      for (const i of [0, 1]) { this.stacks[i] -= a; h.antes[i] = a; h.pot += a; }
+      for (let k = 0; k < 10; k++) h.hands[k % 2 === 0 ? first : d].push(h.deck.shift());
+      sortHand(h.hands[0]); sortHand(h.hands[1]);
+      this.startRound(first);
+      return h;
+    }
+
+    startRound(first) {
+      this.h.round = {
+        committed: [0, 0], current: 0, toAct: first, acted: [false, false], repiques: 0, aggressor: null,
+        done: this.stacks[0] === 0 || this.stacks[1] === 0,
+      };
+    }
+
+    legal(i) {
+      const h = this.h, R = h && h.round, o = 1 - i;
+      if (!R || R.done || R.toAct !== i) return null;
+      const toCall = R.current - R.committed[i];
+      const me = this.stacks[i], opp = this.stacks[o];
+      const L = { toCall, acoes: [], min: 0, max: 0, pagar: 0 };
+      if (toCall === 0) {
+        L.acoes.push('mesa');
+        const cap = Math.min(MAX_BET, me, opp);
+        if (cap >= 1) { L.acoes.push('apostar'); L.min = Math.min(MIN_BET, cap); L.max = cap; }
+      } else {
+        L.acoes.push('sair', 'pagar');
+        L.pagar = Math.min(toCall, me);
+        const cap = Math.min(MAX_BET, me - toCall, opp);
+        if (R.repiques < MAX_REPIQUES && cap >= 1) { L.acoes.push('repicar'); L.min = Math.min(MIN_BET, cap); L.max = cap; }
+      }
+      return L;
+    }
+
+    act(i, pedido) {
+      const h = this.h, R = h.round, o = 1 - i;
+      const L = this.legal(i);
+      if (!L) throw new Error('Não é a vez desse jogador.');
+      const { acao, valor } = sanitize(pedido, L);
+      const pay = (n) => { n = Math.min(n, this.stacks[i]); this.stacks[i] -= n; R.committed[i] += n; h.pot += n; return n; };
+      const rec = { phase: h.phase, who: i, acao, valor: 0 };
+      if (acao === 'mesa') R.acted[i] = true;
+      else if (acao === 'apostar') {
+        rec.valor = pay(valor); R.current = R.committed[i]; R.aggressor = i; R.acted[i] = true; R.acted[o] = false;
+      } else if (acao === 'pagar') { rec.valor = pay(L.toCall); R.acted[i] = true; }
+      else if (acao === 'repicar') {
+        rec.pagou = pay(L.toCall); rec.valor = pay(valor);
+        R.current = R.committed[i]; R.repiques++; R.aggressor = i; R.acted[i] = true; R.acted[o] = false;
+      } else if (acao === 'sair') { h.folded = i; R.done = true; }
+      h.log.push(rec);
+      if (acao !== 'sair') {
+        if (acao === 'pagar' || (R.acted[0] && R.acted[1] && R.committed[0] === R.committed[1])) R.done = true;
+        else R.toAct = o;
+      }
+      return rec;
+    }
+
+    beginDraw() { const h = this.h; h.aggressor1 = h.round.aggressor; h.phase = 'troca'; }
+
+    troca(i, idxs) {
+      const h = this.h, hand = h.hands[i];
+      const sel = [...new Set((idxs || []).map(Number))]
+        .filter((k) => Number.isInteger(k) && k >= 0 && k < hand.length)
+        .slice(0, Math.min(MAX_TROCA, h.deck.length));
+      const out = sel.map((k) => hand[k]);
+      const kept = hand.filter((_, k) => !sel.includes(k));
+      const novos = h.deck.splice(0, sel.length);
+      h.hands[i] = sortHand(kept.concat(novos));
+      h.trocas[i] = sel.length;
+      h.log.push({ phase: 'troca', who: i, acao: 'trocar', valor: sel.length });
+      return { out, novos };
+    }
+
+    beginBet2() {
+      const h = this.h;
+      h.phase = 'bet2';
+      this.startRound(h.aggressor1 != null ? h.aggressor1 : h.first);
+    }
+
+    settle(tipo, winner, extra) {
+      const h = this.h, pot = h.pot;
+      if (winner === -1) {
+        const meio = Math.floor(pot / 2);
+        this.stacks[0] += meio; this.stacks[1] += meio; this.stacks[h.first] += pot - 2 * meio;
+      } else this.stacks[winner] += pot;
+      const nomes = [evaluate(h.hands[0]).name, evaluate(h.hands[1]).name];
+      h.result = Object.assign({ tipo, winner, pot, nomes }, extra);
+      this.history.push({ no: h.no, tipo, winner, pot, nomes, saiu: h.folded, trocas: h.trocas.slice() });
+      h.pot = 0; h.phase = 'fim';
+      this.dealer = 1 - this.dealer;
+      return h.result;
+    }
+    resolveFold() { const i = this.h.folded; return this.settle('saiu', 1 - i, { saiu: i }); }
+    showdown() {
+      const h = this.h, e0 = evaluate(h.hands[0]), e1 = evaluate(h.hands[1]);
+      const c = compare(e0.score, e1.score);
+      return this.settle('mostra', c > 0 ? 0 : c < 0 ? 1 : -1, {});
+    }
+  }
+
+  // ---------- Adversário automático (quando o Claude não está disponível) ----------
+  function quaseSeq(cards4) {
+    const rs = [...new Set(cards4.map((c) => c.r))];
+    if (rs.length < 4) return false;
+    const span = (arr) => Math.max(...arr) - Math.min(...arr) <= 4;
+    return span(rs) || span(rs.map((r) => (r === 14 ? 6 : r)));
+  }
+  function quaseJogo(hand) {
+    const porNaipe = {};
+    for (const c of hand) porNaipe[c.s] = (porNaipe[c.s] || 0) + 1;
+    if (Object.values(porNaipe).some((n) => n === 4)) return true;
+    return hand.some((_, k) => quaseSeq(hand.filter((__, j) => j !== k)));
+  }
+  function forca(mesa, i) {
+    const h = mesa.h, ev = evaluate(h.hands[i]);
+    let s = [0.12, 0.34, 0.56, 0.7, 0.8, 0.86, 0.9, 0.96, 1][ev.cat];
+    if (ev.cat === 1) s += ((ev.tb[0] - 7) / 7) * 0.16;
+    if (ev.cat === 0) s += ((ev.tb[0] - 11) / 3) * 0.06;
+    if (ev.cat === 2) s += ((ev.tb[0] - 9) / 5) * 0.06;
+    if (h.phase === 'bet1') { if (ev.cat === 0 && quaseJogo(h.hands[i])) s += 0.14; }
+    else {
+      const t = h.trocas[1 - i];
+      if (t === 0) s -= 0.12; else if (t === 1) s -= 0.04; else if (t === 3) s += 0.06;
+    }
+    return Math.max(0, Math.min(1, s));
+  }
+  function valorAposta(s, L, pot, rng) {
+    let base = s > 0.85 ? 60 + rng() * 40 : s > 0.65 ? 30 + rng() * 40 : 10 + rng() * 30;
+    base = Math.max(base, pot * 0.4 * (0.6 + rng() * 0.5));
+    const v = Math.round(base / STEP) * STEP;
+    return Math.max(L.min, Math.min(L.max, v || L.min));
+  }
+  function decideHeuristica(mesa, i, L, rng = rand) {
+    const s = forca(mesa, i), pot = mesa.h.pot, blefe = rng() < 0.12;
+    if (L.toCall === 0) {
+      const aposta = (s > 0.6 && !(s > 0.88 && rng() < 0.25)) || blefe;
+      if (L.acoes.includes('apostar') && aposta) return { acao: 'apostar', valor: valorAposta(blefe ? Math.max(s, 0.7) : s, L, pot, rng) };
+      return { acao: 'mesa' };
+    }
+    const odds = L.toCall / (pot + L.toCall);
+    if (L.acoes.includes('repicar') && (s > 0.8 ? rng() < 0.55 : blefe && rng() < 0.35)) return { acao: 'repicar', valor: valorAposta(s, L, pot, rng) };
+    if (s > odds + 0.12 || (s > 0.4 && L.toCall <= 20)) return { acao: 'pagar' };
+    return { acao: 'sair' };
+  }
+  function trocaHeuristica(hand, rng = rand) {
+    const ev = evaluate(hand);
+    const idx = (pred) => hand.map((c, k) => (pred(c) ? k : -1)).filter((k) => k >= 0);
+    if (ev.cat >= 4) return [];
+    const cnt = {};
+    for (const c of hand) cnt[c.r] = (cnt[c.r] || 0) + 1;
+    if (ev.cat >= 1) return idx((c) => cnt[c.r] === 1).slice(0, MAX_TROCA);
+    const porNaipe = {};
+    for (const c of hand) porNaipe[c.s] = (porNaipe[c.s] || 0) + 1;
+    const n4 = Object.keys(porNaipe).find((s) => porNaipe[s] === 4);
+    if (n4) return idx((c) => c.s !== n4);
+    for (let k = 0; k < hand.length; k++) if (quaseSeq(hand.filter((_, j) => j !== k))) return [k];
+    if (rng() < 0.05) return [];
+    return hand.map((c, k) => [c.r, k]).sort((a, b) => b[0] - a[0]).slice(2).map((x) => x[1]).sort((a, b) => a - b);
+  }
+  const FALAS = {
+    mesa: ['Mesa.', 'Mesa, por enquanto.', 'Vou só olhar.'],
+    apostar: ['Vai {v}.', 'Aposto {v}. Encara?', '{v} pra animar a mesa.'],
+    pagar: ['Pago.', 'Tô dentro.', 'Pago pra ver.'],
+    repicar: ['Repico: mais {v}.', 'Sobe mais {v}.', 'Gostei. Mais {v}.'],
+    sair: ['Essa eu largo.', 'Pode levar.', 'Tô fora dessa.'],
+    troca: ['Tô servido.', 'Me dá uma.', 'Duas, por favor.', 'Três, capricha.'],
+    ganhou: ['Hoje a sorte sentou do meu lado.', 'Obrigado pelas fichas.', 'Essa foi minha.'],
+    perdeu: ['Bem jogado. Na próxima eu desconto.', 'Essa doeu.', 'Aproveita enquanto dura.'],
+    empate: ['Meio a meio. Justo.'],
+  };
+  const sorteia = (lista) => lista[Math.floor(rand() * lista.length)];
+  function falaAuto(tipo, v) {
+    if (tipo === 'troca') return FALAS.troca[Math.min(v || 0, 3)];
+    return sorteia(FALAS[tipo] || ['…']).replace('{v}', v);
+  }
+
+  // Caras do boneco do Claude. Na jogada automática a cara sai da jogada e de um sorteio, nunca das cartas.
+  const CARAS = ['neutro', 'confiante', 'feliz', 'desconfiado', 'nervoso', 'surpreso', 'bravo', 'triste', 'piscadinha'];
+  const CARAS_AUTO = {
+    mesa: ['neutro', 'neutro', 'desconfiado', 'nervoso'],
+    apostar: ['confiante', 'confiante', 'piscadinha', 'neutro', 'feliz'],
+    pagar: ['desconfiado', 'neutro', 'nervoso'],
+    repicar: ['confiante', 'bravo', 'piscadinha', 'feliz'],
+    sair: ['triste', 'bravo'],
+    troca: ['neutro', 'confiante', 'desconfiado'],
+  };
+  const caraAuto = (acao) => sorteia(CARAS_AUTO[acao] || ['neutro']);
+  const SINONIMOS = [
+    [/^(sorri|alegr|ri)/, 'feliz'], [/^pisc/, 'piscadinha'], [/^(convenc|segur|metid)/, 'confiante'], [/^(suspeit|desconf)/, 'desconfiado'],
+    [/^(preocup|ansios|suad)/, 'nervoso'], [/^(espant|chocad)/, 'surpreso'], [/^(irrit|zang|raiv)/, 'bravo'], [/^(chatead|decepcion|abatid)/, 'triste'],
+    [/^(seri|impassiv|poker)/, 'neutro'],
+  ];
+  function normCara(c) {
+    const t = String(c || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+    const igual = CARAS.find((c) => t.startsWith(c.slice(0, -1))); // aceita "nervosa", "confiantes"…
+    if (igual) return igual;
+    const achou = SINONIMOS.find(([re]) => re.test(t));
+    return achou ? achou[1] : null;
+  }
+
+  // ---------- Textos pro Claude ----------
+  const qtd = (n) => (n === 0 ? 'nenhuma carta' : n === 1 ? '1 carta' : `${n} cartas`);
+  function descreve(rec, eu, nomes = ['você', 'o adversário']) {
+    const quem = rec.who === eu ? nomes[0] : nomes[1];
+    switch (rec.acao) {
+      case 'mesa': return `${quem} disse mesa`;
+      case 'apostar': return `${quem} apostou ${rec.valor}`;
+      case 'pagar': return `${quem} pagou ${rec.valor}`;
+      case 'repicar': return `${quem} pagou ${rec.pagou} e repicou mais ${rec.valor}`;
+      case 'sair': return `${quem} saiu`;
+      case 'trocar': return `${quem} trocou ${qtd(rec.valor)}`;
+      default: return '';
+    }
+  }
+  function logTexto(h, eu) {
+    const nomes = { bet1: '1ª rodada', troca: 'troca', bet2: '2ª rodada' };
+    return ['bet1', 'troca', 'bet2']
+      .map((f) => { const recs = h.log.filter((r) => r.phase === f); return recs.length ? `${nomes[f]}: ${recs.map((r) => descreve(r, eu)).join(', ')}` : ''; })
+      .filter(Boolean).join('; ');
+  }
+  function histTexto(mesa, eu) {
+    const o = 1 - eu;
+    return mesa.history.slice(-5).map((m) => {
+      const tr = m.trocas && m.trocas[o] != null ? ` Na troca, o adversário pegou ${qtd(m.trocas[o])}.` : '';
+      if (m.tipo === 'saiu') {
+        return m.saiu === o
+          ? `Mão ${m.no}: o adversário saiu e você levou ${m.pot} sem mostrar (você tinha ${m.nomes[eu]}).${tr}`
+          : `Mão ${m.no}: você saiu e o adversário levou ${m.pot}.${tr}`;
+      }
+      const res = m.winner === -1 ? `empataram e dividiram ${m.pot}` : m.winner === eu ? `você levou ${m.pot}` : `o adversário levou ${m.pot}`;
+      return `Mão ${m.no}: foi pra mostra, você com ${m.nomes[eu]} e o adversário com ${m.nomes[o]}; ${res}.${tr}`;
+    }).join('\n  ');
+  }
+
+  const INTRO = `Você é o Claude e está jogando pôquer fechado, valendo fichas de mentira, numa mesa de bar antigo: fumaça no ar, uísque no copo e jazz tocando baixinho. Do outro lado está uma pessoa que está aprendendo o jogo. Na mesa você aparece como o bonequinho laranja do Claude Code, com um bigodão enrolado de vilão de filme antigo, e o adversário vê a cara que você faz. Jogue pra ganhar e com estilo: aposte forte com mão boa, às vezes jogue devagar pra enganar e blefe de vez em quando, principalmente quando o adversário mostrar fraqueza. Não seja previsível.
+
+Regras desta mesa:
+- Baralho de 32 cartas, do 7 ao Ás. Mãos, da mais forte pra mais fraca: straight flush, quadra, flush, full, sequência, trinca, dois pares, par, carta alta. Aqui o flush vale mais que o full. O Ás também fecha a sequência baixa A-7-8-9-10.
+- Pingo de ${ANTE} fichas por mão. Duas rodadas de aposta: antes e depois da troca. Cada um troca até ${MAX_TROCA} cartas, uma vez só.
+- Apostas e repiques de ${MIN_BET} a ${MAX_BET} fichas, no máximo ${MAX_REPIQUES} repiques por rodada.
+- Se alguém sai, o outro leva o pote sem mostrar as cartas.`;
+  const FALA_REGRA = '"fala": o que você diz em voz alta na mesa, em português do Brasil, informal, no máximo 12 palavras. Pode provocar, brincar ou blefar, sempre com bom humor. Nunca diga quais cartas você tem.';
+  const CARA_REGRA = `"cara": a cara que você faz pro adversário ver, uma destas: ${CARAS.map((c) => `"${c}"`).join(', ')}. Pode combinar com a sua mão ou ser blefe.`;
+
+  function situacao(mesa, i) {
+    const h = mesa.h, o = 1 - i, ev = evaluate(h.hands[i]);
+    const linhas = [
+      `- Mão ${h.no}. Quem deu as cartas: ${h.dealer === i ? 'você' : 'o adversário'}.`,
+      `- Suas cartas: ${h.hands[i].map(cardTxt).join(' ')}. Sua mão agora: ${ev.name}.`,
+      `- Suas fichas: ${mesa.stacks[i]}. Fichas do adversário: ${mesa.stacks[o]}. Pote: ${h.pot}.`,
+    ];
+    if (h.trocas[o] != null || h.trocas[i] != null) {
+      linhas.push(`- Na troca: ${h.trocas[o] != null ? `o adversário trocou ${qtd(h.trocas[o])}` : 'o adversário ainda vai trocar depois de você'}${h.trocas[i] != null ? `; você trocou ${qtd(h.trocas[i])}` : ''}.`);
+    }
+    linhas.push(`- O que já aconteceu nesta mão: ${logTexto(h, i) || 'nada ainda'}.`);
+    const hist = histTexto(mesa, i);
+    linhas.push(`- Mãos anteriores: ${hist ? '\n  ' + hist : 'esta é a primeira.'}`);
+    return linhas.join('\n');
+  }
+
+  function promptJogada(mesa, i, L) {
+    const h = mesa.h, R = h.round, o = 1 - i;
+    const fase = h.phase === 'bet1' ? '1ª rodada de apostas, antes da troca' : '2ª rodada de apostas, depois da troca';
+    const textos = {
+      mesa: '"mesa" (passar sem apostar)',
+      apostar: `"apostar" (de ${L.min} a ${L.max})`,
+      pagar: `"pagar" (põe ${L.pagar} e acompanha)`,
+      repicar: `"repicar" (paga ${L.toCall} e aumenta de ${L.min} a ${L.max})`,
+      sair: '"sair" (desiste e perde o que já pôs no pote)',
+    };
+    return `${INTRO}
+
+Situação:
+- Fase: ${fase}.
+${situacao(mesa, i)}
+- Nesta rodada você já pôs ${R.committed[i]} e o adversário ${R.committed[o]}.${L.toCall ? ` Pra continuar você precisa pagar ${L.toCall}.` : ''}
+
+Jogadas permitidas agora: ${L.acoes.map((a) => textos[a]).join(', ')}.
+
+Responda só com um JSON com as chaves "acao", "valor", "fala" e "cara":
+- "acao": uma das jogadas permitidas, escrita igual.
+- "valor": só em "apostar" ou "repicar": quantas fichas você aposta ou aumenta, em múltiplos de 10. Nas outras jogadas, 0.
+- ${FALA_REGRA}
+- ${CARA_REGRA}`;
+  }
+
+  function promptTroca(mesa, i) {
+    const h = mesa.h;
+    return `${INTRO}
+
+Situação:
+- Fase: troca de cartas. Você pode trocar de 0 a ${MAX_TROCA} cartas, uma vez só.
+${situacao(mesa, i)}
+- Suas cartas, numeradas: ${h.hands[i].map((c, k) => `${k}: ${cardTxt(c)}`).join(', ')}.
+
+Responda só com um JSON com as chaves "trocar", "fala" e "cara":
+- "trocar": lista com os números das cartas que você vai descartar, no máximo ${MAX_TROCA}. Lista vazia pra ficar com todas.
+- ${FALA_REGRA}
+- ${CARA_REGRA}`;
+  }
+
+  function promptReacao(mesa, i) {
+    const h = mesa.h, o = 1 - i, r = h.result;
+    let res;
+    if (r.tipo === 'saiu') {
+      res = r.saiu === i
+        ? `Você saiu da mão e o adversário levou ${r.pot} fichas.`
+        : `O adversário saiu e você levou ${r.pot} fichas sem mostrar as cartas (você tinha ${r.nomes[i]}).`;
+    } else {
+      const quem = r.winner === -1 ? 'Empate: o pote foi dividido.' : r.winner === i ? `Você levou ${r.pot} fichas.` : `O adversário levou ${r.pot} fichas.`;
+      res = `Foi pra mostra: você tinha ${r.nomes[i]} e o adversário ${r.nomes[o]}. ${quem}`;
+    }
+    const fim = mesa.over ? (mesa.stacks[i] > 0 ? ' Com isso o adversário ficou sem fichas: você ganhou a partida.' : ' Com isso você ficou sem fichas: o adversário ganhou a partida.') : '';
+    return `${INTRO}
+
+A mão ${h.no} acabou. ${res}${fim}
+Fichas agora: você ${mesa.stacks[i]}, o adversário ${mesa.stacks[o]}.
+
+Escreva só a frase que você diz na mesa agora, reagindo ao resultado: português do Brasil, informal, no máximo 14 palavras, sem aspas e com bom humor. Se você ganhou sem mostrar as cartas, não conte o que tinha.`;
+  }
+
+  root.Poker = {
+    ANTE, MIN_BET, MAX_BET, STEP, MAX_REPIQUES, START, MAX_TROCA,
+    SUITS, SUIT_SYM, SUIT_NOME, RANK_TXT, RANK_NOME, CAT_NOME,
+    card, makeDeck, shuffle, cardTxt, sortHand, evaluate, compare, normAcao, sanitize, descreve, Mesa, CARAS, normCara,
+    heuristica: { decide: decideHeuristica, troca: trocaHeuristica, fala: falaAuto, cara: caraAuto },
+    prompts: { jogada: promptJogada, troca: promptTroca, reacao: promptReacao },
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>
+// Jazz gerado na hora: piano, baixo caminhando e vassourinha num blues menor em dó.
+(function (root) {
+  'use strict';
+
+  const S = 2 / 3; // colcheia "suingada"
+  const ACORDES = [
+    { raiz: 36, tipo: 'm', piano: [63, 67, 70, 74] }, // Cm9
+    { raiz: 41, tipo: 'm', piano: [56, 60, 63, 67] }, // Fm9
+    { raiz: 36, tipo: 'm', piano: [63, 67, 70, 74] },
+    { raiz: 36, tipo: 'm', piano: [62, 63, 67, 70] },
+    { raiz: 41, tipo: 'm', piano: [56, 60, 63, 67] },
+    { raiz: 41, tipo: 'm', piano: [55, 60, 63, 68] },
+    { raiz: 36, tipo: 'm', piano: [63, 67, 70, 74] },
+    { raiz: 36, tipo: 'm', piano: [62, 67, 70, 75] },
+    { raiz: 44, tipo: '7', piano: [54, 60, 65, 70] }, // Ab13
+    { raiz: 43, tipo: '7', piano: [53, 59, 63, 68] }, // G7(b9 b13)
+    { raiz: 36, tipo: 'm', piano: [63, 67, 70, 74] },
+    { raiz: 43, tipo: '7', piano: [53, 59, 63, 68] },
+  ];
+  const PADROES = [
+    [[0, 1.1], [1 + S, 0.7]],
+    [[S, 0.5], [2 + S, 1.2]],
+    [[1, 0.45], [3, 0.45]],
+    [[0, 0.5], [1 + S, 0.35], [2 + S, 1.1]],
+    [[0, 2.6]],
+    [[1 + S, 0.5], [3 + S, 0.6]],
+  ];
+  const VOLUME = 0.5;
+
+  class Jazz {
+    constructor() { this.ctx = null; this.ligado = true; }
+
+    mtof(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+    iniciar() {
+      if (this.ctx) { if (this.ligado && this.ctx.state !== 'running') this.ctx.resume(); return; }
+      const AC = root.AudioContext || root.webkitAudioContext;
+      if (!AC) return;
+      let ctx;
+      try { ctx = this.ctx = new AC(); } catch (e) { return; }
+      const master = this.master = ctx.createGain();
+      master.gain.setValueAtTime(0, ctx.currentTime);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6500;
+      const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 3;
+      master.connect(lp); lp.connect(comp); comp.connect(ctx.destination);
+
+      this.pianoBus = ctx.createGain(); this.pianoBus.gain.value = 0.85;
+      const plp = ctx.createBiquadFilter(); plp.type = 'lowpass'; plp.frequency.value = 2600;
+      this.pianoBus.connect(plp); plp.connect(master);
+      const lfo = ctx.createOscillator(); lfo.frequency.value = 4.6;
+      const lfoG = ctx.createGain(); lfoG.gain.value = 0.15;
+      lfo.connect(lfoG); lfoG.connect(this.pianoBus.gain); lfo.start();
+
+      const n = ctx.sampleRate * 2, buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let k = 0; k < n; k++) d[k] = Math.random() * 2 - 1;
+      this.ruido = buf;
+      this.vinil();
+
+      this.beat = 60 / 88;
+      this.prox = ctx.currentTime + 0.25;
+      this.batida = 0;
+      this.timer = setInterval(() => this.agenda(), 40);
+      if (this.ligado) master.gain.linearRampToValueAtTime(VOLUME, ctx.currentTime + 3);
+      document.addEventListener('visibilitychange', () => {
+        if (!this.ctx) return;
+        if (document.hidden) this.ctx.suspend(); else if (this.ligado) this.ctx.resume();
+      });
+    }
+
+    setLigado(on) {
+      this.ligado = on;
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime, g = this.master.gain;
+      g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(on ? VOLUME : 0, t + 0.4);
+      if (on) this.ctx.resume();
+      else setTimeout(() => { if (!this.ligado && this.ctx) this.ctx.suspend(); }, 500);
+    }
+
+    agenda() {
+      const ctx = this.ctx;
+      if (!ctx || ctx.state !== 'running') return;
+      if (this.prox < ctx.currentTime) this.prox = ctx.currentTime + 0.05;
+      while (this.prox < ctx.currentTime + 0.35) {
+        this.toca(this.batida, this.prox);
+        this.prox += this.beat;
+        this.batida = (this.batida + 1) % 48;
+      }
+    }
+
+    toca(b, t) {
+      const bar = Math.floor(b / 4), beat = b % 4, B = this.beat, A = ACORDES[bar], prox = ACORDES[(bar + 1) % 12];
+      this.prato(t, beat % 2 ? 0.9 : 0.65);
+      if (beat % 2 === 1) { this.prato(t + B * S, 0.45); this.vassoura(t, 0.8); this.chimbal(t); }
+      else this.bumbo(t, 0.5);
+      this.baixo(this.notaBaixo(A, prox, beat), t, B * 0.95);
+      if (beat === 0) {
+        const padrao = PADROES[Math.floor(Math.random() * PADROES.length)];
+        for (const [o, dur] of padrao) this.acorde(A.piano, t + o * B, dur * B, 0.55 + Math.random() * 0.25);
+        if ((bar === 3 || bar === 7 || bar === 11) && Math.random() < 0.5) this.frase(t + 2 * B, B);
+      }
+    }
+
+    notaBaixo(A, prox, beat) {
+      const iv = A.tipo === 'm' ? [3, 7, 10, 5, 2] : [4, 7, 10, 2, 9];
+      let n;
+      if (beat === 0) n = A.raiz;
+      else if (beat === 3) n = prox.raiz + (Math.random() < 0.5 ? 1 : -1);
+      else n = A.raiz + iv[Math.floor(Math.random() * (beat === 1 ? 2 : iv.length))];
+      while (n > 50) n -= 12;
+      while (n < 31) n += 12;
+      return n;
+    }
+
+    baixo(m, t, dur) {
+      const ctx = this.ctx, f = this.mtof(m);
+      const o1 = ctx.createOscillator(); o1.type = 'triangle'; o1.frequency.value = f;
+      const o2 = ctx.createOscillator(); o2.type = 'sine'; o2.frequency.value = f;
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = 0.7;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.4, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.15, t + 0.18);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.master);
+      for (const o of [o1, o2]) { o.start(t); o.stop(t + dur + 0.05); }
+    }
+
+    acorde(notas, t, dur, vel) {
+      notas.forEach((m, k) => this.nota(m, t + k * 0.008 + Math.random() * 0.006, dur, vel * (k === notas.length - 1 ? 1 : 0.8)));
+    }
+
+    nota(m, t, dur, vel) {
+      const ctx = this.ctx, f = this.mtof(m), solta = t + Math.max(dur, 0.36);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.075 * vel, t + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.03 * vel, t + 0.35);
+      g.gain.setTargetAtTime(0.0001, solta, 0.12);
+      const o1 = ctx.createOscillator(); o1.type = 'sine'; o1.frequency.value = f;
+      const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = f * 1.002;
+      const g2 = ctx.createGain(); g2.gain.value = 0.35;
+      const o3 = ctx.createOscillator(); o3.type = 'sine'; o3.frequency.value = f * 4;
+      const g3 = ctx.createGain(); g3.gain.setValueAtTime(0.12 * vel, t); g3.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+      o1.connect(g); o2.connect(g2); g2.connect(g); o3.connect(g3); g3.connect(g);
+      g.connect(this.pianoBus);
+      for (const o of [o1, o2, o3]) { o.start(t); o.stop(solta + 0.8); }
+    }
+
+    frase(t, B) {
+      const escala = [0, 3, 5, 6, 7, 10];
+      let grau = 4 + Math.floor(Math.random() * 3);
+      const n = 4 + Math.floor(Math.random() * 3);
+      for (let k = 0; k < n; k++) {
+        const oct = Math.floor(grau / 6), pc = escala[((grau % 6) + 6) % 6];
+        const tt = t + (k * B) / 2 + (k % 2 ? B * (S - 0.5) : 0);
+        this.nota(72 + oct * 12 + pc, tt, B * 0.45, 0.7);
+        grau += Math.random() < 0.7 ? -1 : 1;
+        if (Math.random() < 0.2) grau -= 1;
+      }
+    }
+
+    ruidoFiltrado(t, tipo, freq, q, pico, ataque, fim, dur) {
+      const ctx = this.ctx, src = ctx.createBufferSource(); src.buffer = this.ruido;
+      const f = ctx.createBiquadFilter(); f.type = tipo; f.frequency.value = freq; if (q) f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(pico, t + ataque);
+      g.gain.exponentialRampToValueAtTime(0.0003, t + fim);
+      src.connect(f); f.connect(g); g.connect(this.master);
+      src.start(t, Math.random() * 1.2, dur);
+      return f;
+    }
+    prato(t, vel) {
+      const f = this.ruidoFiltrado(t, 'highpass', 5200, 0, 0.05 * vel, 0.002, 0.6, 0.65);
+      f.Q.value = 0.8;
+    }
+    vassoura(t, vel) { this.ruidoFiltrado(t, 'bandpass', 2200, 0.6, 0.06 * vel, 0.025, 0.3, 0.35); }
+    chimbal(t) { this.ruidoFiltrado(t, 'highpass', 7500, 0, 0.022, 0.002, 0.05, 0.06); }
+    bumbo(t, vel) {
+      const ctx = this.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(62, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+      g.gain.setValueAtTime(0.12 * vel, t); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.22);
+      o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 0.25);
+    }
+
+    vinil() {
+      const ctx = this.ctx, n = ctx.sampleRate * 3, buf = ctx.createBuffer(1, n, ctx.sampleRate), d = buf.getChannelData(0);
+      for (let k = 0; k < n; k++) {
+        d[k] += (Math.random() * 2 - 1) * 0.012;
+        if (Math.random() < 0.00045) { const a = (Math.random() * 2 - 1) * 0.6; for (let j = 0; j < 30 && k + j < n; j++) d[k + j] += a * Math.exp(-j / 6); }
+      }
+      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2400; f.Q.value = 0.5;
+      const g = ctx.createGain(); g.gain.value = 0.35;
+      src.connect(f); f.connect(g); g.connect(this.master); src.start();
+    }
+  }
+
+  root.Jazz = Jazz;
+})(window);
+</script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script>
+(async () => {
+'use strict';
+window.__jogoRodando = true;
+// Mesa 3D: bar escuro, abajur, feltro verde, cartas, fichas, uísque e cigarro aceso.
+
+const MESA_Y = 0.78;
+const RX = 1.1, RZ = 0.74;
+const CW = 0.14, CH = 0.196, CR = 0.012;
+const FICHA_R = 0.026, FICHA_H = 0.0072;
+const reduzMov = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+let maxAniso = 1;
+function canvasTex(w, h, draw, srgb = true) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  if (srgb) t.encoding = THREE.sRGBEncoding;
+  t.anisotropy = maxAniso;
+  return t;
+}
+function rr(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+
+// ---------- Naipes desenhados à mão ----------
+function coracao(g, s) {
+  g.beginPath();
+  g.moveTo(0, s * 0.5);
+  g.bezierCurveTo(-s * 0.1, s * 0.36, -s * 0.52, s * 0.12, -s * 0.52, -s * 0.14);
+  g.bezierCurveTo(-s * 0.52, -s * 0.44, -s * 0.12, -s * 0.52, 0, -s * 0.24);
+  g.bezierCurveTo(s * 0.12, -s * 0.52, s * 0.52, -s * 0.44, s * 0.52, -s * 0.14);
+  g.bezierCurveTo(s * 0.52, s * 0.12, s * 0.1, s * 0.36, 0, s * 0.5);
+  g.closePath();
+}
+function haste(g, s) {
+  g.beginPath(); g.moveTo(0, s * 0.05);
+  g.quadraticCurveTo(s * 0.04, s * 0.36, s * 0.2, s * 0.5); g.lineTo(-s * 0.2, s * 0.5);
+  g.quadraticCurveTo(-s * 0.04, s * 0.36, 0, s * 0.05); g.fill();
+}
+function naipe(g, s, x, y, tam, cor) {
+  g.save(); g.translate(x, y); g.fillStyle = cor;
+  if (s === 'h') { coracao(g, tam); g.fill(); }
+  else if (s === 'd') {
+    g.beginPath(); g.moveTo(0, -tam * 0.5);
+    g.quadraticCurveTo(tam * 0.16, -tam * 0.2, tam * 0.38, 0); g.quadraticCurveTo(tam * 0.16, tam * 0.2, 0, tam * 0.5);
+    g.quadraticCurveTo(-tam * 0.16, tam * 0.2, -tam * 0.38, 0); g.quadraticCurveTo(-tam * 0.16, -tam * 0.2, 0, -tam * 0.5);
+    g.fill();
+  } else if (s === 's') {
+    g.save(); g.translate(0, -tam * 0.08); g.rotate(Math.PI); coracao(g, tam * 0.84); g.fill(); g.restore();
+    haste(g, tam);
+  } else {
+    const r = tam * 0.21;
+    for (const [cx, cy] of [[0, -tam * 0.24], [-tam * 0.23, tam * 0.05], [tam * 0.23, tam * 0.05]]) { g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill(); }
+    g.beginPath(); g.arc(0, -tam * 0.02, r * 0.7, 0, Math.PI * 2); g.fill();
+    haste(g, tam);
+  }
+  g.restore();
+}
+
+const PIPS = {
+  7: [[0, 0], [0, 0.5], [0, 1], [2, 0], [2, 0.5], [2, 1], [1, 0.25]],
+  8: [[0, 0], [0, 0.5], [0, 1], [2, 0], [2, 0.5], [2, 1], [1, 0.25], [1, 0.75]],
+  9: [[0, 0], [0, 1 / 3], [0, 2 / 3], [0, 1], [2, 0], [2, 1 / 3], [2, 2 / 3], [2, 1], [1, 0.5]],
+  10: [[0, 0], [0, 1 / 3], [0, 2 / 3], [0, 1], [2, 0], [2, 1 / 3], [2, 2 / 3], [2, 1], [1, 1 / 6], [1, 5 / 6]],
+};
+
+function faceTex(c, P) {
+  return canvasTex(320, 448, (g, w, h) => {
+    g.fillStyle = '#f7f0e1'; g.fillRect(0, 0, w, h);
+    const lg = g.createLinearGradient(0, 0, 0, h);
+    lg.addColorStop(0, 'rgba(255,255,255,0.35)'); lg.addColorStop(1, 'rgba(120,90,50,0.10)');
+    g.fillStyle = lg; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(80,60,40,0.25)'; g.lineWidth = 3; rr(g, 6, 6, w - 12, h - 12, 18); g.stroke();
+    const cor = c.s === 'h' || c.s === 'd' ? '#9c0f1c' : '#121010';
+    const txt = P.RANK_TXT[c.r];
+    for (const vira of [false, true]) {
+      g.save();
+      if (vira) { g.translate(w, h); g.rotate(Math.PI); }
+      g.fillStyle = cor; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.font = `800 ${txt === '10' ? 56 : 66}px "Alegreya Sans", "Trebuchet MS", sans-serif`;
+      g.fillText(txt, 44, 72);
+      naipe(g, c.s, 44, 104, 38, cor);
+      g.restore();
+    }
+    if (c.r <= 10) {
+      const xs = [0.31 * w, 0.5 * w, 0.69 * w], y0 = 0.2 * h, y1 = 0.8 * h;
+      for (const [col, fy] of PIPS[c.r]) {
+        g.save(); g.translate(xs[col], y0 + (y1 - y0) * fy);
+        if (fy > 0.5) g.rotate(Math.PI);
+        naipe(g, c.s, 0, 0, 60, cor); g.restore();
+      }
+    } else if (c.r === 14) {
+      naipe(g, c.s, w / 2, h / 2, 150, cor);
+    } else {
+      const x0 = 0.2 * w, y0 = 0.14 * h, fw = 0.6 * w, fh = 0.72 * h;
+      g.fillStyle = c.s === 'h' || c.s === 'd' ? 'rgba(179,32,43,0.07)' : 'rgba(27,23,18,0.06)';
+      rr(g, x0, y0, fw, fh, 10); g.fill();
+      g.strokeStyle = '#b8954a'; g.lineWidth = 4; rr(g, x0, y0, fw, fh, 10); g.stroke();
+      g.lineWidth = 1.5; rr(g, x0 + 8, y0 + 8, fw - 16, fh - 16, 6); g.stroke();
+      g.strokeStyle = 'rgba(184,149,74,0.6)'; g.beginPath(); g.moveTo(x0 + 10, y0 + fh - 10); g.lineTo(x0 + fw - 10, y0 + 10); g.stroke();
+      for (const vira of [false, true]) {
+        g.save();
+        if (vira) { g.translate(w, h); g.rotate(Math.PI); }
+        g.fillStyle = cor; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = '112px Limelight, Georgia, serif';
+        g.fillText(txt, w * 0.43, h * 0.33);
+        naipe(g, c.s, w * 0.64, h * 0.23, 40, cor);
+        g.restore();
+      }
+    }
+  });
+}
+
+function versoTex() {
+  return canvasTex(320, 448, (g, w, h) => {
+    g.fillStyle = '#f2e9d8'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#7c1c26'; rr(g, 16, 16, w - 32, h - 32, 14); g.fill();
+    g.save(); rr(g, 16, 16, w - 32, h - 32, 14); g.clip();
+    g.strokeStyle = 'rgba(241,210,170,0.26)'; g.lineWidth = 2;
+    for (let k = -h; k < w + h; k += 18) {
+      g.beginPath(); g.moveTo(k, 0); g.lineTo(k + h, h); g.stroke();
+      g.beginPath(); g.moveTo(k, h); g.lineTo(k + h, 0); g.stroke();
+    }
+    g.restore();
+    g.strokeStyle = 'rgba(241,220,180,0.75)'; g.lineWidth = 3; rr(g, 26, 26, w - 52, h - 52, 10); g.stroke();
+    g.fillStyle = '#7c1c26'; g.beginPath(); g.ellipse(w / 2, h / 2, 60, 78, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(241,220,180,0.85)'; g.lineWidth = 3; g.stroke();
+    naipe(g, 'd', w / 2, h / 2, 70, 'rgba(241,220,180,0.9)');
+  });
+}
+
+function madeiraTex(base, veio = 'rgba(15,6,2,0.4)', w = 512, h = 512) {
+  return canvasTex(w, h, (g) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 140; k++) {
+      const y = Math.random() * h, amp = 2 + Math.random() * 6, fase = Math.random() * 6;
+      g.strokeStyle = veio; g.lineWidth = 0.6 + Math.random() * 1.6; g.globalAlpha = 0.25 + Math.random() * 0.5;
+      g.beginPath();
+      for (let x = 0; x <= w; x += 8) { const yy = y + Math.sin(x / 60 + fase) * amp; if (x) g.lineTo(x, yy); else g.moveTo(x, yy); }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  });
+}
+
+function arcText(g, text, cx, cy, r, meio, font, color) {
+  g.save(); g.font = font; g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const chars = [...text], larg = chars.map((ch) => g.measureText(ch).width * 1.08);
+  let ang = meio + larg.reduce((a, b) => a + b, 0) / r / 2;
+  chars.forEach((ch, k) => {
+    const a = ang - larg[k] / r / 2;
+    g.save(); g.translate(cx + r * Math.cos(a), cy + r * Math.sin(a)); g.rotate(a - Math.PI / 2); g.fillText(ch, 0, 0); g.restore();
+    ang -= larg[k] / r;
+  });
+  g.restore();
+}
+
+function feltroTex() {
+  return canvasTex(1024, 1024, (g, w, h) => {
+    const grd = g.createRadialGradient(w / 2, h / 2, 40, w / 2, h / 2, w * 0.62);
+    grd.addColorStop(0, '#2f7a52'); grd.addColorStop(0.6, '#235f40'); grd.addColorStop(1, '#163c29');
+    g.fillStyle = grd; g.fillRect(0, 0, w, h);
+    const img = g.getImageData(0, 0, w, h), d = img.data;
+    for (let k = 0; k < d.length; k += 4) { const n = (Math.random() - 0.5) * 14; d[k] += n; d[k + 1] += n; d[k + 2] += n; }
+    g.putImageData(img, 0, 0);
+    g.strokeStyle = 'rgba(214,178,104,0.5)'; g.lineWidth = 3;
+    g.beginPath(); g.ellipse(w / 2, h / 2, w * 0.4, h * 0.4, 0, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = 1.2; g.beginPath(); g.ellipse(w / 2, h / 2, w * 0.415, h * 0.415, 0, 0, Math.PI * 2); g.stroke();
+    arcText(g, 'PÔQUER FECHADO', w / 2, h / 2, w * 0.34, Math.PI / 2, '40px Limelight, Georgia, serif', 'rgba(222,190,120,0.5)');
+    arcText(g, 'SÓ DO 7 AO ÁS', w / 2, h / 2, w * 0.34, -Math.PI / 2, '34px Limelight, Georgia, serif', 'rgba(222,190,120,0.38)');
+  });
+}
+
+function suave(g, w, h, cor = '255,255,255', a0 = 0.55) {
+  const r = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+  r.addColorStop(0, `rgba(${cor},${a0})`); r.addColorStop(0.4, `rgba(${cor},${a0 * 0.4})`); r.addColorStop(1, `rgba(${cor},0)`);
+  g.fillStyle = r; g.fillRect(0, 0, w, h);
+}
+
+function shapeGeoUV(shape, seg, w, h) {
+  const geo = new THREE.ShapeGeometry(shape, seg);
+  const pos = geo.attributes.position, uv = geo.attributes.uv;
+  for (let k = 0; k < pos.count; k++) uv.setXY(k, pos.getX(k) / w + 0.5, pos.getY(k) / h + 0.5);
+  uv.needsUpdate = true;
+  return geo;
+}
+function retanguloArredondado(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+}
+const elipse3 = () => class extends THREE.Curve {
+  constructor(rx, rz, y) { super(); this.rx = rx; this.rz = rz; this.y = y; }
+  getPoint(t, v = new THREE.Vector3()) { const a = t * Math.PI * 2; return v.set(Math.cos(a) * this.rx, this.y, Math.sin(a) * this.rz); }
+}
+function pseudo(k) { const x = Math.sin(k * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); }
+
+function ambienteReflexo(renderer) {
+  const sala = new THREE.Scene();
+  sala.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), new THREE.MeshBasicMaterial({
+    side: THREE.BackSide,
+    map: canvasTex(64, 256, (g, w, h) => { const lg = g.createLinearGradient(0, 0, 0, h); lg.addColorStop(0, '#6b5442'); lg.addColorStop(0.5, '#2a1c14'); lg.addColorStop(1, '#0b0806'); g.fillStyle = lg; g.fillRect(0, 0, w, h); }),
+  })));
+  const abajur = new THREE.Mesh(new THREE.PlaneGeometry(4, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3.4, 2.6) }));
+  abajur.position.set(0, 6, 0); abajur.rotation.x = Math.PI / 2; sala.add(abajur);
+  for (const x of [-6, 6]) {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 3), new THREE.MeshBasicMaterial({ color: new THREE.Color(2, 1.1, 0.5) }));
+    p.position.set(x, 2, -6); p.lookAt(0, 0, 0); sala.add(p);
+  }
+  const pm = new THREE.PMREMGenerator(renderer);
+  const tex = pm.fromScene(sala, 0.04).texture;
+  pm.dispose();
+  return tex;
+}
+
+// ---------- O Claude: o bonequinho do Claude Code, de bigodão ----------
+// Medidas do desenho que aparece no terminal: corpo de 13 por 8 quadradinhos, olhos de 1 por 2,
+// bracinhos de 2 por 2 e quatro perninhas. U é o lado de um quadradinho.
+const U = 0.052;
+function bloco(w, h, d, b) {
+  const iw = w - 2 * b, ih = h - 2 * b;
+  const g = new THREE.ExtrudeGeometry(retanguloArredondado(iw, ih, Math.min(b * 0.6, iw * 0.45, ih * 0.45)),
+    { depth: d - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 3 });
+  g.translate(0, 0, -(d - 2 * b) / 2);
+  return g;
+}
+// Metade direita do bigode: uma linha que sai do meio, cai um pouco e termina num caracol.
+function bigodeGeo(largura, espessura) {
+  const linha = new THREE.SplineCurve([[0, 0.02], [0.14, 0], [0.34, -0.06], [0.54, -0.11], [0.72, -0.11], [0.86, -0.05], [0.95, 0.06], [0.95, 0.19], [0.87, 0.26], [0.78, 0.23], [0.76, 0.15], [0.8, 0.1], [0.86, 0.11]]
+    .map(([x, y]) => new THREE.Vector2(x, y)));
+  const N = 96, cima = [], baixo = [];
+  for (let k = 0; k <= N; k++) {
+    const u = k / N, p = linha.getPointAt(u), t = linha.getTangentAt(u);
+    const w = 0.026 + 0.5 * Math.pow(1 - u, 2.4);
+    const meioCima = 0.7 + 0.3 * THREE.MathUtils.smoothstep(p.x, 0, 0.12), meioBaixo = 0.86 + 0.14 * THREE.MathUtils.smoothstep(p.x, 0, 0.1);
+    cima.push(new THREE.Vector2(p.x - t.y * w * 0.4 * meioCima, p.y + t.x * w * 0.4 * meioCima));
+    baixo.push(new THREE.Vector2(p.x + t.y * w * 0.6 * meioBaixo, p.y - t.x * w * 0.6 * meioBaixo));
+  }
+  const forma = new THREE.Shape(cima.concat(baixo.reverse()).map((v) => v.multiplyScalar(largura / 2)));
+  const b = espessura * 0.35;
+  const g = new THREE.ExtrudeGeometry(forma, { depth: espessura - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b * 0.5, bevelSegments: 3 });
+  g.translate(0, 0, -(espessura - 2 * b) / 2);
+  return g;
+}
+
+const CARA_BASE = {
+  olho: 1, olhoA: 1, olhoB: 1, largura: 1, alegre: 0, sobr: 0, sobrAng: 0, sobrY: 0, sobrYA: 0, sobrYB: 0, boca: 0, bigAng: 0, bigY: 0,
+  inclina: 0, tomba: 0, giro: 0, alt: 0, achata: 1, bracoA: 0, bracoB: 0, suor: 0, vermelho: 0, tremor: 0, gy: 0, enrola: 0, pula: 0, dardo: 0,
+};
+// Cada cara diz só o que muda. "depois" é como ela fica passados "ate" segundos.
+const CARAS3D = {
+  neutro: {},
+  confiante: { olho: 0.58, sobr: 1, sobrYB: 0.6, sobrAng: 0.12, bigAng: 0.1, inclina: -0.07, tomba: -0.04, enrola: 1, ate: 1.8, depois: { enrola: 0 } },
+  feliz: { alegre: 1, boca: 0.55, bigAng: 0.22, bigY: 0.15, bracoA: 1, bracoB: 1, pula: 1, ate: 2.4, depois: { bracoA: 0.15, bracoB: 0.15, pula: 0, boca: 0.2 } },
+  desconfiado: { olho: 0.4, sobr: 1, sobrAng: 0.22, sobrY: -0.25, giro: 0.22, inclina: 0.06, bigAng: -0.04 },
+  nervoso: { olho: 1.1, largura: 0.92, sobr: 1, sobrAng: -0.3, sobrY: 0.3, suor: 1, tremor: 0.6, bigAng: -0.06, dardo: 1 },
+  surpreso: { olho: 1.32, largura: 1.25, sobr: 1, sobrY: 0.85, boca: 1, inclina: -0.12, bracoA: 0.45, bracoB: 0.45, ate: 1.6, depois: { boca: 0.3, olho: 1.12, largura: 1.08, bracoA: 0.1, bracoB: 0.1 } },
+  bravo: { olho: 0.6, sobr: 1, sobrAng: 0.5, sobrY: -0.3, inclina: 0.1, vermelho: 1, tremor: 0.5, bigAng: -0.12, ate: 2.5, depois: { vermelho: 0.35, tremor: 0.12 } },
+  triste: { olho: 0.75, sobr: 1, sobrAng: -0.45, sobrY: 0.1, bigAng: -0.28, bigY: -0.2, alt: -0.02, achata: 0.93, inclina: 0.14, bracoA: -0.5, bracoB: -0.5, gy: -0.6 },
+  piscadinha: { olhoB: 0.08, sobr: 1, sobrYA: 0.45, sobrYB: -0.2, bigAng: 0.12, tomba: 0.09, ate: 1.1, depois: { olhoB: 0.62 } },
+};
+
+function criaClawd(env, camera) {
+  const D = 7 * U, FRENTE = D / 2;
+  const laranja = new THREE.MeshPhysicalMaterial({ color: 0xd77757, roughness: 0.55, clearcoat: 0.2, clearcoatRoughness: 0.4, envMap: env, envMapIntensity: 0.35 });
+  const preto = new THREE.MeshStandardMaterial({ color: 0x0a0807, roughness: 0.2, envMap: env, envMapIntensity: 1 });
+  const pelo = new THREE.MeshStandardMaterial({ color: 0x17100c, roughness: 0.42, envMap: env, envMapIntensity: 0.7 });
+  const sombra = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
+
+  const raiz = new THREE.Group();   // fica na cadeira e gira pra olhar de lado
+  const corpo = new THREE.Group();  // pula, murcha e inclina, com o pivô embaixo do corpo
+  raiz.add(corpo);
+  const tronco = sombra(new THREE.Mesh(bloco(13 * U, 8 * U, D, 0.45 * U), laranja));
+  tronco.position.y = 4 * U;
+  corpo.add(tronco);
+  for (const x of [-6, -4, 4, 6]) {
+    const perna = new THREE.Mesh(bloco(U, 2.4 * U, U, 0.3 * U), laranja);
+    perna.position.set(x * U, -U, 0);
+    corpo.add(perna);
+  }
+  const bracos = [-1, 1].map((lado) => {
+    const ombro = new THREE.Group(); // pivô no ombro, pra levantar o bracinho
+    ombro.position.set(lado * 6.3 * U, 3 * U, 1.8 * U);
+    const m = sombra(new THREE.Mesh(bloco(2.4 * U, 2 * U, 2.4 * U, 0.45 * U), laranja));
+    m.position.x = lado * 1.15 * U;
+    ombro.add(m); corpo.add(ombro);
+    return ombro;
+  });
+  // Olhos: o retângulo preto do desenho original e um "^" pra quando ele ri.
+  const olhos = [-1, 1].map((lado) => {
+    const g = new THREE.Group();
+    const aberto = new THREE.Mesh(bloco(1.2 * U, 2.3 * U, 0.5 * U, 0.17 * U), preto);
+    const riso = new THREE.Group();
+    for (const s of [-1, 1]) {
+      const p = new THREE.Mesh(bloco(1.05 * U, 0.42 * U, 0.5 * U, 0.14 * U), preto);
+      p.position.x = s * 0.37 * U; p.rotation.z = -s * 0.75;
+      riso.add(p);
+    }
+    g.add(aberto, riso); corpo.add(g);
+    return { g, aberto, riso, lado };
+  });
+  const sobrancelhas = [-1, 1].map(() => {
+    const m = new THREE.Mesh(bloco(1.8 * U, 0.42 * U, 0.4 * U, 0.14 * U), preto);
+    corpo.add(m);
+    return m;
+  });
+  // Bigodão: duas metades espelhadas que se encontram no meio, cada uma girando no centro.
+  // Um miolo escuro atrás tampa a fresta que abre quando elas giram.
+  const bigode = new THREE.Group();
+  bigode.position.set(0, 3.3 * U, FRENTE + 0.3 * U);
+  const geoBigode = bigodeGeo(14.5 * U, 0.5 * U);
+  const miolo = new THREE.Mesh(bloco(1.6 * U, 2.6 * U, 0.4 * U, 0.15 * U), pelo);
+  miolo.position.set(0, -0.3 * U, -0.12 * U);
+  bigode.add(miolo);
+  const metades = [-1, 1].map((lado) => {
+    const espelho = new THREE.Group(), giro = new THREE.Group();
+    espelho.scale.x = lado;
+    const m = sombra(new THREE.Mesh(geoBigode, pelo));
+    m.position.z = lado > 0 ? 0.0015 : 0;
+    giro.add(m); espelho.add(giro); bigode.add(espelho);
+    return giro;
+  });
+  corpo.add(bigode);
+  const boca = new THREE.Mesh(new THREE.CircleGeometry(1.1 * U, 28), new THREE.MeshStandardMaterial({ color: 0x2a0908, roughness: 0.85 }));
+  boca.position.set(0, 1.25 * U, FRENTE + 0.004);
+  corpo.add(boca);
+  const gotaMat = new THREE.MeshStandardMaterial({ color: 0xa8dcff, roughness: 0.05, transparent: true, opacity: 0.9, envMap: env, envMapIntensity: 1.6 });
+  const suor = new THREE.Group();
+  const pontaGota = new THREE.Mesh(new THREE.ConeGeometry(0.3 * U, 0.6 * U, 16), gotaMat);
+  pontaGota.position.y = 0.38 * U;
+  suor.add(new THREE.Mesh(new THREE.SphereGeometry(0.34 * U, 16, 12), gotaMat), pontaGota);
+  corpo.add(suor);
+
+  const atual = { ...CARA_BASE };
+  const ALVOS = { cartas: V(0, MESA_Y, -0.44), pote: V(0, MESA_Y, -0.02), mesa: V(0, MESA_Y, -0.3), 'cartas-voce': V(0, MESA_Y + 0.07, 0.5) };
+  const olhoMundo = V(0, 0, 0), dir = V(0, 0, 0), olhar = new THREE.Vector2(), dardo = new THREE.Vector2(), ideia = new THREE.Vector2();
+  const clamp3 = THREE.MathUtils.clamp;
+  let nome = 'neutro', t0 = 0, agora = 0, pensando = false, fimFala = 0, alvo = 'voce', fimAlvo = 0;
+  let proxPisca = 1.5, piscaT0 = -1, acenoT0 = -10, proxDardo = 0, proxIdeia = 0;
+
+  function atualiza(t, dt, ponteiro) {
+    agora = t;
+    const c = CARAS3D[nome], te = t - t0;
+    const fase = c.depois && te > c.ate ? c.depois : null;
+    const k = 1 - Math.exp(-dt * 9);
+    for (const chave in atual) {
+      let v = fase && chave in fase ? fase[chave] : chave in c ? c[chave] : CARA_BASE[chave];
+      if (pensando && chave === 'sobr') v = 1;
+      if (pensando && chave === 'sobrAng') v = 0.14;
+      if (pensando && chave === 'enrola') v = 0.7; // alisa o bigode enquanto pensa
+      atual[chave] += (v - atual[chave]) * k;
+    }
+
+    // Pra onde ele olha: pra você (seguindo o mouse), pra um ponto da mesa, ou pro alto quando pensa.
+    let gx, gy;
+    if (pensando) {
+      if (t > proxIdeia) { ideia.set((Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.5), 0.35 + Math.random() * 0.35); proxIdeia = t + 1 + Math.random() * 1.4; }
+      gx = ideia.x; gy = ideia.y;
+    } else {
+      if (fimAlvo && t > fimAlvo) { alvo = 'voce'; fimAlvo = 0; }
+      raiz.getWorldPosition(olhoMundo); olhoMundo.y += 5 * U; olhoMundo.z += FRENTE;
+      dir.copy(ALVOS[alvo] || camera.position).sub(olhoMundo);
+      const yaw = Math.atan2(dir.x, dir.z), pitch = Math.atan2(dir.y, Math.hypot(dir.x, dir.z));
+      gx = yaw / 0.7; gy = pitch > 0 ? pitch : (pitch / 0.6) * 0.85;
+      if (alvo === 'voce' && ponteiro) { gx += ponteiro.x * 0.5; gy -= ponteiro.y * 0.35; }
+    }
+    if (atual.dardo > 0.05) {
+      if (t > proxDardo) { dardo.set((Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 0.5); proxDardo = t + 0.22 + Math.random() * 0.45; }
+      gx += dardo.x * atual.dardo; gy += dardo.y * atual.dardo;
+    }
+    gx -= atual.giro * 1.4; gy += atual.gy;
+    const kg = 1 - Math.exp(-dt * (atual.dardo > 0.5 ? 25 : 12));
+    olhar.x += (clamp3(gx, -1, 1) - olhar.x) * kg;
+    olhar.y += (clamp3(gy, -1, 0.75) - olhar.y) * kg;
+
+    if (t > proxPisca) { piscaT0 = t; proxPisca = t + (Math.random() < 0.15 ? 0.3 : 2.4 + Math.random() * 3.6); }
+    const pk = (t - piscaT0) / 0.15, pisca = pk >= 0 && pk < 1 ? 1 - Math.sin(pk * Math.PI) * 0.94 : 1;
+    const falando = t < fimFala, silaba = falando ? Math.abs(Math.sin(t * 13)) * (0.65 + 0.35 * Math.sin(t * 3.7)) : 0;
+    // Tchauzinho: 2 s balançando o bracinho, sorrindo e inclinado pro lado do braço.
+    const ta = t - acenoT0, ola = ta < 2 ? Math.sin(Math.min(1, ta / 0.3) * Math.PI / 2) * (ta > 1.7 ? (2 - ta) / 0.3 : 1) : 0;
+    const alegre = Math.max(atual.alegre, ola);
+
+    for (const o of olhos) {
+      const lado = o.lado < 0 ? atual.olhoA : atual.olhoB;
+      const abre = lado * atual.olho * pisca * (1 - alegre), ri = alegre * lado;
+      o.g.position.set(o.lado * 4 * U + olhar.x * 0.7 * U, 5 * U + olhar.y * 0.8 * U, FRENTE);
+      o.aberto.scale.set(atual.largura, Math.max(0.05, abre), 1);
+      o.aberto.visible = abre > 0.03 || alegre < 0.5;
+      o.riso.scale.setScalar(Math.max(0.001, ri));
+      o.riso.visible = ri > 0.03;
+    }
+    sobrancelhas.forEach((s, i) => {
+      const lado = i ? 1 : -1;
+      s.position.set(lado * 4 * U + olhar.x * 0.3 * U, (6.85 + atual.sobrY + (i ? atual.sobrYB : atual.sobrYA) + olhar.y * 0.25) * U, FRENTE + 0.2 * U);
+      s.rotation.z = lado * atual.sobrAng;
+      s.scale.setScalar(Math.max(0.001, atual.sobr));
+      s.visible = atual.sobr > 0.03;
+    });
+
+    const torce = atual.enrola > 0.02 ? Math.sin(t * (pensando ? 4 : 10)) * 0.1 * atual.enrola : 0;
+    const treme = atual.tremor > 0.02 ? atual.tremor : 0;
+    metades.forEach((m, i) => {
+      m.rotation.z = atual.bigAng + (falando ? (silaba - 0.4) * 0.07 : 0) + (i ? torce : 0)
+        + (treme ? Math.sin(t * 43 + i * 2) * 0.03 * treme : 0) + (nome === 'piscadinha' && i ? 0.06 : 0);
+    });
+    bigode.position.y = (3.3 + atual.bigY + silaba * 0.12) * U;
+    const aberta = Math.max(atual.boca, falando ? 0.15 + 0.55 * silaba : 0);
+    boca.scale.set(1.1, Math.max(0.001, aberta * 0.9), 1);
+    boca.visible = aberta > 0.03;
+
+    // Bracinhos: levantar, acenar e levar até a ponta do bigode pra enrolar.
+    let a = atual.bracoA, b = atual.bracoB, bFrente = 0;
+    if (atual.enrola > 0.02) { b = b * (1 - atual.enrola) + (0.55 + torce * 1.5) * atual.enrola; bFrente = -1.25 * atual.enrola; }
+    if (ola > 0) b = b * (1 - ola) + (0.55 + Math.sin(ta * 12) * 0.45) * ola;
+    bracos[0].rotation.set(0, 0, -a * 1.1);
+    bracos[1].rotation.set(0, bFrente, b * 1.1);
+
+    const resp = Math.sin(t * 1.8);
+    let alt = atual.alt + Math.abs(Math.sin(te * 8.5)) * 0.03 * atual.pula;
+    if (nome === 'surpreso') alt += Math.sin(Math.min(1, te / 0.3) * Math.PI) * 0.02;
+    corpo.position.set(treme ? (Math.random() - 0.5) * 0.003 * treme : 0, alt, 0);
+    corpo.scale.set(1 - resp * 0.004, atual.achata * (1 + resp * 0.012), 1 - resp * 0.004);
+    corpo.rotation.set(atual.inclina, 0, atual.tomba - ola * 0.07 + Math.sin(t * 0.7) * 0.012);
+    raiz.rotation.y = atual.giro + olhar.x * 0.1;
+    laranja.emissive.setRGB(0.6, 0.06, 0.02).multiplyScalar(atual.vermelho * (0.22 + 0.08 * Math.sin(t * 6)));
+
+    suor.visible = atual.suor > 0.03;
+    if (suor.visible) {
+      const f = (t * 0.55) % 1;
+      suor.position.set(5.9 * U, (7.1 - f * 1.8) * U, FRENTE + 0.25 * U);
+      suor.scale.setScalar(Math.max(0.001, atual.suor * Math.min(1, f / 0.1)));
+      gotaMat.opacity = 0.9 * (1 - Math.pow(f, 6));
+    }
+  }
+
+  return {
+    grupo: raiz,
+    atualiza,
+    // Pontos pro balão mirar: o lado da cara na altura do bigode, o alto da cabeça ou logo abaixo do bigode.
+    ponto(onde, v) {
+      const p = raiz.position;
+      if (onde === 'topo') return v.set(p.x, p.y + 8 * U + 0.07, p.z);
+      if (onde === 'baixo') return v.set(p.x, p.y + 0.6 * U, p.z + FRENTE);
+      return v.set(p.x + (onde === 'dir' ? 8.8 : -8.8) * U, p.y + 4.2 * U, p.z + FRENTE);
+    },
+    cara(n) { if (!CARAS3D[n]) n = 'neutro'; if (n !== nome || CARAS3D[n].ate) { nome = n; t0 = agora; } },
+    olhar(a, ms = 0) { alvo = a; fimAlvo = ms ? agora + ms / 1000 : 0; },
+    pensar(on) { pensando = on; if (on) { nome = 'neutro'; t0 = agora; proxIdeia = 0; } },
+    falar(n) { fimFala = agora + clamp3(n * 0.055, 0.7, 3.2); },
+    acenar() { acenoT0 = agora; },
+  };
+}
+
+function criaCena(canvas, P) {
+  if (THREE.ColorManagement) THREE.ColorManagement.legacyMode = false;
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  maxAniso = renderer.capabilities.getMaxAnisotropy();
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.physicallyCorrectLights = true;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b0807);
+  scene.fog = new THREE.FogExp2(0x0b0807, 0.14);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 40);
+  const env = ambienteReflexo(renderer);
+
+  // ---------- Luz ----------
+  scene.add(new THREE.HemisphereLight(0x6b5442, 0x0b0806, 0.9));
+  const spot = new THREE.SpotLight(0xffd29a, 14, 0, 0.8, 0.55, 1);
+  spot.position.set(0, 2.1, 0.05);
+  spot.target.position.set(0, MESA_Y, 0.05);
+  spot.castShadow = true;
+  spot.shadow.mapSize.set(1024, 1024);
+  spot.shadow.bias = -0.0004; spot.shadow.normalBias = 0.02;
+  spot.shadow.camera.near = 0.5; spot.shadow.camera.far = 3;
+  scene.add(spot, spot.target);
+  const contra = new THREE.DirectionalLight(0x7f95c4, 0.6);
+  contra.position.set(-1.5, 2.2, -3);
+  scene.add(contra);
+  for (const x of [-2.4, 2.4]) {
+    const arandela = new THREE.PointLight(0xff9a4d, 2.2, 3.2, 2);
+    arandela.position.set(x, 2.0, -3.85);
+    scene.add(arandela);
+    const brilho = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(64, 64, (g, w, h) => suave(g, w, h, '255,170,90', 0.9)), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, opacity: 0.6 }));
+    brilho.position.set(x, 2.0, -4.1); brilho.scale.setScalar(0.5);
+    scene.add(brilho);
+  }
+
+  // ---------- Sala ----------
+  const chaoTex = canvasTex(512, 512, (g, w, h) => {
+    for (let k = 0; k < 8; k++) {
+      g.fillStyle = k % 2 ? '#24160e' : '#1d110a'; g.fillRect(k * 64, 0, 64, h);
+      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(k * 64, 0, 2, h);
+    }
+    for (let k = 0; k < 220; k++) {
+      g.strokeStyle = `rgba(0,0,0,${0.1 + Math.random() * 0.2})`; g.lineWidth = 1;
+      const x = Math.random() * w; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + (Math.random() - 0.5) * 6, h); g.stroke();
+    }
+  });
+  chaoTex.wrapS = chaoTex.wrapT = THREE.RepeatWrapping; chaoTex.repeat.set(5, 5);
+  const chao = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshStandardMaterial({ map: chaoTex, roughness: 0.85 }));
+  chao.rotation.x = -Math.PI / 2; chao.receiveShadow = true;
+  scene.add(chao);
+
+  const papelTex = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#2a1416'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 64) { g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(x, 0, 28, h); }
+    g.strokeStyle = 'rgba(201,162,90,.12)';
+    for (let x = 32; x < w; x += 64) for (let y = 0; y < h; y += 64) {
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + 10, y + 16); g.lineTo(x, y + 32); g.lineTo(x - 10, y + 16); g.closePath(); g.stroke();
+    }
+  });
+  papelTex.wrapS = papelTex.wrapT = THREE.RepeatWrapping; papelTex.repeat.set(4, 2);
+  const parede = new THREE.Mesh(new THREE.PlaneGeometry(14, 6), new THREE.MeshStandardMaterial({ map: papelTex, roughness: 0.9 }));
+  parede.position.set(0, 3, -4.2);
+  scene.add(parede);
+  const lambri = new THREE.Mesh(new THREE.BoxGeometry(14, 1.1, 0.05), new THREE.MeshStandardMaterial({ map: madeiraTex('#2a160c'), roughness: 0.6 }));
+  lambri.position.set(0, 0.55, -4.17);
+  scene.add(lambri);
+
+  const neon = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.5), new THREE.MeshBasicMaterial({
+    map: canvasTex(512, 232, (g, w, h) => {
+      g.font = '150px Limelight, Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.shadowColor = 'rgba(255,80,90,1)'; g.shadowBlur = 30; g.fillStyle = 'rgba(255,120,120,1)';
+      g.fillText('Jazz', w / 2, h / 2 + 8); g.shadowBlur = 12; g.fillStyle = 'rgba(255,225,220,1)'; g.fillText('Jazz', w / 2, h / 2 + 8);
+    }),
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  }));
+  neon.position.set(1.25, 2.3, -4.15);
+  scene.add(neon);
+
+  // ---------- Mesa ----------
+  const elipse = new THREE.Shape(); elipse.absellipse(0, 0, RX, RZ, 0, Math.PI * 2, false, 0);
+  const feltro = new THREE.Mesh(shapeGeoUV(elipse, 64, RX * 2, RZ * 2), new THREE.MeshStandardMaterial({ map: feltroTex(), roughness: 0.95 }));
+  feltro.rotation.x = -Math.PI / 2; feltro.position.y = MESA_Y; feltro.receiveShadow = true;
+  scene.add(feltro);
+  const madeira = new THREE.MeshStandardMaterial({ map: madeiraTex('#3b1f12'), roughness: 0.5 });
+  const corpo = new THREE.Mesh(new THREE.CylinderGeometry(1, 0.96, 0.08, 96), madeira);
+  corpo.scale.set(RX + 0.1, 1, RZ + 0.1); corpo.position.y = MESA_Y - 0.045; corpo.receiveShadow = true;
+  scene.add(corpo);
+  const trilho = new THREE.Mesh(new THREE.TubeGeometry(new (elipse3())(RX + 0.035, RZ + 0.035, MESA_Y + 0.012), 220, 0.052, 16, true),
+    new THREE.MeshStandardMaterial({ color: 0x24140e, roughness: 0.42 }));
+  trilho.castShadow = true; trilho.receiveShadow = true;
+  scene.add(trilho);
+  const pe = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, MESA_Y - 0.1, 24), madeira);
+  pe.position.y = (MESA_Y - 0.1) / 2;
+  scene.add(pe);
+
+  // Cadeira do Claude, do outro lado: encosto alto, que aparece por cima e dos lados dele.
+  const madCadeira = new THREE.MeshStandardMaterial({ map: madeiraTex('#2b170d'), roughness: 0.55 });
+  const cadeira = new THREE.Group();
+  for (const x of [-0.37, 0.37]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.028, 1.42, 12), madCadeira); p.position.set(x, 0.71, 0); cadeira.add(p); }
+  const travessa = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.1, 0.05), madCadeira); travessa.position.set(0, 1.39, 0); cadeira.add(travessa);
+  const encosto = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.44, 0.025), new THREE.MeshStandardMaterial({ color: 0x3a1a14, roughness: 0.7 })); encosto.position.set(0, 1.1, 0); cadeira.add(encosto);
+  const assento = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.46), madCadeira); assento.position.set(0, 0.47, 0.22); cadeira.add(assento);
+  cadeira.position.set(0, 0, -(RZ + 0.5));
+  scene.add(cadeira);
+
+  // O Claude sentado nela, com uma luz quente no rosto pra dar pra ver as caras.
+  const clawd = criaClawd(env, camera);
+  clawd.grupo.position.set(0, 0.85, -0.98);
+  scene.add(clawd.grupo);
+  const luzRosto = new THREE.PointLight(0xffcf9a, 1, 1.8, 2);
+  luzRosto.position.set(0, 1.42, -0.38);
+  scene.add(luzRosto);
+
+  // Plaquinha de latão com o nome do Claude.
+  const placa = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.045), new THREE.MeshStandardMaterial({
+    map: canvasTex(512, 116, (g, w, h) => {
+      const lg = g.createLinearGradient(0, 0, w, h); lg.addColorStop(0, '#8a6a2c'); lg.addColorStop(0.5, '#e1c27a'); lg.addColorStop(1, '#8f6d2e');
+      g.fillStyle = lg; rr(g, 2, 2, w - 4, h - 4, 14); g.fill();
+      g.fillStyle = 'rgba(40,24,8,0.85)'; g.font = '62px Limelight, Georgia, serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('CLAUDE', w / 2, h / 2 + 4);
+    }), metalness: 0.6, roughness: 0.35, envMap: env, envMapIntensity: 0.8, transparent: true,
+  }));
+  placa.rotation.x = -Math.PI / 2; placa.position.set(0, MESA_Y + 0.002, -0.63);
+  scene.add(placa);
+
+  // ---------- Bebida e cigarro ----------
+  const vidro = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, transparent: true, opacity: 0.22, envMap: env, envMapIntensity: 1.3, depthWrite: false, side: THREE.DoubleSide });
+  function copo(x, z, nivel) {
+    const g = new THREE.Group();
+    const perfil = [[0, 0], [0.04, 0], [0.042, 0.004], [0.043, 0.085], [0.0395, 0.085], [0.0385, 0.012], [0, 0.012]].map(([a, b]) => new THREE.Vector2(a, b));
+    const corpoCopo = new THREE.Mesh(new THREE.LatheGeometry(perfil, 32), vidro); corpoCopo.renderOrder = 3;
+    const liquido = new THREE.Mesh(new THREE.CylinderGeometry(0.0375, 0.037, nivel, 32),
+      new THREE.MeshStandardMaterial({ color: 0xc0661f, emissive: 0x2a0f02, roughness: 0.15, transparent: true, opacity: 0.88, envMap: env, envMapIntensity: 0.6 }));
+    liquido.position.y = 0.012 + nivel / 2; liquido.renderOrder = 1;
+    const gelo = new THREE.MeshStandardMaterial({ color: 0xf4fbff, roughness: 0.1, transparent: true, opacity: 0.45, envMap: env });
+    for (let k = 0; k < 2; k++) {
+      const cubo = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.024, 0.024), gelo);
+      cubo.position.set(k ? 0.011 : -0.009, 0.012 + nivel - 0.004, k ? -0.006 : 0.008);
+      cubo.rotation.set(0.3 * k, 0.6 + k, 0.2); cubo.renderOrder = 2; g.add(cubo);
+    }
+    const porta = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.056, 0.004, 32), new THREE.MeshStandardMaterial({ color: 0x9c6b3c, roughness: 0.9 }));
+    porta.position.y = -0.002; porta.receiveShadow = true;
+    g.add(porta, liquido, corpoCopo);
+    g.position.set(x, MESA_Y + 0.004, z);
+    scene.add(g);
+  }
+  copo(0.74, 0.34, 0.034);
+  copo(-0.7, -0.36, 0.022);
+
+  const garrafa = new THREE.Group();
+  const perfilGarrafa = [[0, 0], [0.045, 0], [0.047, 0.006], [0.047, 0.19], [0.042, 0.215], [0.018, 0.245], [0.015, 0.28], [0.017, 0.282], [0.017, 0.3], [0, 0.3]].map(([a, b]) => new THREE.Vector2(a, b));
+  const corpoGarrafa = new THREE.Mesh(new THREE.LatheGeometry(perfilGarrafa, 32), new THREE.MeshStandardMaterial({ color: 0x5a2a0c, roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.85, envMap: env, envMapIntensity: 1.2 }));
+  corpoGarrafa.castShadow = true;
+  const rotulo = new THREE.Mesh(new THREE.CylinderGeometry(0.0482, 0.0482, 0.09, 32, 1, true, -1.25, 2.5), new THREE.MeshStandardMaterial({
+    map: canvasTex(512, 220, (g, w, h) => {
+      g.fillStyle = '#efe2c4'; g.fillRect(0, 0, w, h);
+      g.strokeStyle = '#7a2a1c'; g.lineWidth = 6; g.strokeRect(14, 14, w - 28, h - 28);
+      g.fillStyle = '#3a1a0e'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = '74px Limelight, Georgia, serif'; g.fillText('UÍSQUE', w / 2, h * 0.42);
+      g.font = '700 30px "Alegreya Sans", sans-serif'; g.fillText('12 ANOS · BARRIL DE CARVALHO', w / 2, h * 0.76);
+    }), roughness: 0.8,
+  }));
+  rotulo.position.y = 0.1;
+  const tampa = new THREE.Mesh(new THREE.CylinderGeometry(0.0185, 0.0185, 0.03, 20), new THREE.MeshStandardMaterial({ color: 0x5c1418, roughness: 0.5 }));
+  tampa.position.y = 0.3;
+  garrafa.add(corpoGarrafa, rotulo, tampa);
+  garrafa.position.set(-0.88, MESA_Y, -0.04); garrafa.rotation.y = 0.25;
+  scene.add(garrafa);
+
+  const cinzeiro = new THREE.Group();
+  const perfilCinz = [[0, 0], [0.065, 0], [0.07, 0.006], [0.072, 0.024], [0.062, 0.026], [0.055, 0.012], [0, 0.012]].map(([a, b]) => new THREE.Vector2(a, b));
+  cinzeiro.add(new THREE.Mesh(new THREE.LatheGeometry(perfilCinz, 36), new THREE.MeshStandardMaterial({ color: 0x8f9a9e, roughness: 0.15, transparent: true, opacity: 0.55, envMap: env, envMapIntensity: 1.2 })));
+  const cinzas = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.002, 24), new THREE.MeshStandardMaterial({ color: 0x55524d, roughness: 1 }));
+  cinzas.position.y = 0.013; cinzeiro.add(cinzas);
+  const bituca = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.022, 10), new THREE.MeshStandardMaterial({ color: 0xc98a4b, roughness: 0.8 }));
+  bituca.rotation.set(Math.PI / 2, 0, 0.8); bituca.position.set(0.015, 0.017, 0.012); cinzeiro.add(bituca);
+  const CINZ = V(0.52, MESA_Y, 0.06);
+  cinzeiro.position.copy(CINZ);
+  scene.add(cinzeiro);
+
+  const cigarro = new THREE.Group();
+  const parte = (comp, x0, cor, emissivo) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.0042, 0.0042, comp, 12),
+      emissivo ? new THREE.MeshBasicMaterial({ color: cor }) : new THREE.MeshStandardMaterial({ color: cor, roughness: 0.8 }));
+    m.rotation.z = Math.PI / 2; m.position.x = x0 + comp / 2; m.castShadow = !emissivo; cigarro.add(m); return m;
+  };
+  parte(0.025, -0.045, 0xc98a4b);
+  parte(0.055, -0.02, 0xf1ede4);
+  parte(0.006, 0.035, 0x6c6863);
+  const brasa = parte(0.003, 0.041, 0xff5a1f, true);
+  cigarro.position.set(CINZ.x - 0.066, MESA_Y + 0.026, CINZ.z + 0.004);
+  cigarro.rotation.set(0, 0.35, -0.12);
+  scene.add(cigarro);
+  cigarro.updateMatrixWorld(true);
+  const pontaBrasa = cigarro.localToWorld(V(0.046, 0, 0));
+  const brilhoBrasa = new THREE.Sprite(new THREE.SpriteMaterial({ map: canvasTex(64, 64, (g, w, h) => suave(g, w, h, '255,110,40', 1)), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+  brilhoBrasa.position.copy(pontaBrasa); brilhoBrasa.scale.setScalar(0.03);
+  scene.add(brilhoBrasa);
+
+  const maco = new THREE.Group();
+  const corpoMaco = new THREE.Mesh(new THREE.BoxGeometry(0.056, 0.022, 0.087), new THREE.MeshStandardMaterial({ color: 0xf3eee4, roughness: 0.6 }));
+  corpoMaco.castShadow = true;
+  const topoMaco = new THREE.Mesh(new THREE.PlaneGeometry(0.056, 0.087), new THREE.MeshStandardMaterial({
+    map: canvasTex(224, 348, (g, w, h) => {
+      g.fillStyle = '#f3eee4'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#a3202b'; g.beginPath(); g.moveTo(0, 0); g.lineTo(w, 0); g.lineTo(w, h * 0.42); g.lineTo(w / 2, h * 0.55); g.lineTo(0, h * 0.42); g.closePath(); g.fill();
+      g.fillStyle = '#2a1a12'; g.textAlign = 'center'; g.font = '40px Limelight, Georgia, serif'; g.fillText('SERESTA', w / 2, h * 0.72);
+      g.font = '700 20px "Alegreya Sans", sans-serif'; g.fillText('20 CIGARROS', w / 2, h * 0.84);
+    }), roughness: 0.6,
+  }));
+  topoMaco.rotation.x = -Math.PI / 2; topoMaco.position.y = 0.0111;
+  const isqueiro = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.009, 0.036), new THREE.MeshStandardMaterial({ color: 0xb8b2a6, metalness: 0.9, roughness: 0.3, envMap: env }));
+  isqueiro.position.set(0.05, -0.0065, 0.01); isqueiro.rotation.y = -0.3; isqueiro.castShadow = true;
+  maco.add(corpoMaco, topoMaco, isqueiro);
+  maco.position.set(-0.8, MESA_Y + 0.011, 0.3); maco.rotation.y = 0.4;
+  scene.add(maco);
+
+  // ---------- Fumaça e névoa ----------
+  const fumacaTex = canvasTex(128, 128, (g, w, h) => suave(g, w, h));
+  const fumaca = [];
+  for (let k = 0; k < 60; k++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: fumacaTex, color: 0xcfd2d6, transparent: true, opacity: 0, depthWrite: false }));
+    s.visible = false; s.userData = { vida: 1, dur: 1 };
+    scene.add(s); fumaca.push(s);
+  }
+  let proxFumaca = 0, idxFumaca = 0;
+  function soltaFumaca() {
+    const s = fumaca[idxFumaca++ % fumaca.length];
+    s.position.copy(pontaBrasa); s.scale.setScalar(0.02); s.visible = true;
+    s.userData = { vida: 0, dur: 6 + Math.random() * 3, vx: (Math.random() - 0.5) * 0.01, vz: (Math.random() - 0.5) * 0.01, fase: Math.random() * 6.28, giro: (Math.random() - 0.5) * 0.4 };
+  }
+
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.95, 1.32, 48, 1, true), new THREE.MeshBasicMaterial({
+    color: 0xffd7a0, transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    alphaMap: canvasTex(4, 256, (g, w, h) => { const lg = g.createLinearGradient(0, 0, 0, h); lg.addColorStop(0, '#fff'); lg.addColorStop(0.7, '#555'); lg.addColorStop(1, '#000'); g.fillStyle = lg; g.fillRect(0, 0, w, h); }, false),
+  }));
+  cone.position.set(0, MESA_Y + 0.02 + 0.66, 0.05);
+  scene.add(cone);
+
+  const nevoaTex = canvasTex(128, 128, (g, w, h) => suave(g, w, h, '230,205,170', 0.5));
+  const nevoa = [];
+  for (let k = 0; k < 7; k++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: nevoaTex, transparent: true, opacity: 0.05 + Math.random() * 0.03, depthWrite: false }));
+    s.position.set((Math.random() - 0.5) * 1.8, 1.15 + Math.random() * 0.7, -0.7 + Math.random() * 0.6);
+    s.scale.setScalar(1.6 + Math.random());
+    s.userData = { base: s.position.clone(), fase: Math.random() * 6.28 };
+    scene.add(s); nevoa.push(s);
+  }
+
+  // ---------- Cartas ----------
+  const cartaGeo = shapeGeoUV(retanguloArredondado(CW, CH, CR), 6, CW, CH);
+  const marcaGeo = shapeGeoUV(retanguloArredondado(CW + 0.014, CH + 0.014, CR + 0.006), 6, CW + 0.014, CH + 0.014);
+  const marcaTroca = new THREE.MeshBasicMaterial({ color: 0xee7436 });
+  const marcaDestaque = new THREE.MeshBasicMaterial({ color: 0xe8cc8e });
+  const versoMat = new THREE.MeshStandardMaterial({ map: versoTex(), roughness: 0.6 });
+  const faces = new Map();
+  function faceMat(c) {
+    if (!faces.has(c.id)) {
+      const tex = faceTex(c, P);
+      faces.set(c.id, new THREE.MeshStandardMaterial({ map: tex, color: 0x9a9a9a, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.5, roughness: 0.55, toneMapped: false }));
+    }
+    return faces.get(c.id);
+  }
+  function novaCarta(c, origem) {
+    const g = new THREE.Group(); g.rotation.order = 'YXZ';
+    const f = new THREE.Mesh(cartaGeo, faceMat(c)); f.rotation.x = -Math.PI / 2; f.position.y = 0.0007; f.castShadow = true;
+    const b = new THREE.Mesh(cartaGeo, versoMat); b.rotation.x = Math.PI / 2; b.position.y = -0.0007; b.castShadow = true;
+    const m = new THREE.Mesh(marcaGeo, marcaTroca); m.rotation.x = -Math.PI / 2; m.position.y = 0.0002; m.visible = false;
+    g.add(f, b, m);
+    g.userData = { carta: c, marca: m };
+    g.position.copy(origem || monte.position).add(V(0, 0.02, 0));
+    g.rotation.set(0, 0, Math.PI);
+    scene.add(g);
+    return g;
+  }
+  function marca(g, tipo) {
+    const m = g.userData.marca;
+    m.visible = !!tipo;
+    if (tipo) m.material = tipo === 'troca' ? marcaTroca : marcaDestaque;
+  }
+
+  const estadoLayout = { retrato: false };
+  // i = 0: suas cartas, em pé voltadas pra você; i = 1: as do Claude, deitadas do outro lado.
+  function alvoCarta(i, k, n, flags = {}) {
+    const d = k - (n - 1) / 2;
+    if (i === 0) {
+      const esp = estadoLayout.retrato ? 0.128 : 0.15;
+      const pos = V(d * esp, MESA_Y + 0.064 + k * 0.001, 0.5 - Math.abs(d) * 0.01);
+      if (flags.sobe) { pos.y += 0.045; pos.z -= 0.035; }
+      return { pos, rot: { x: 0.55, y: -d * 0.05, z: 0 } };
+    }
+    if (flags.revelado) return { pos: V(d * 0.15, MESA_Y + 0.05, -0.38), rot: { x: 0.5, y: -d * 0.03, z: 0 } };
+    return { pos: V(d * 0.125, MESA_Y + 0.0015 + k * 0.0012, -0.44 + Math.abs(d) * 0.006), rot: { x: 0, y: d * 0.04, z: Math.PI } };
+  }
+  let nDescartes = 0;
+  function posDescarte() {
+    nDescartes++;
+    return { pos: V(-0.3 + (Math.random() - 0.5) * 0.06, MESA_Y + 0.001 + nDescartes * 0.0012, 0.04 + (Math.random() - 0.5) * 0.06), rot: { x: 0, y: (Math.random() - 0.5) * 1.2, z: Math.PI } };
+  }
+  function zeraDescartes() { nDescartes = 0; }
+
+  const monte = new THREE.Mesh(new THREE.BoxGeometry(CW, 0.022, CH), [
+    new THREE.MeshStandardMaterial({ color: 0xe9dfcb, roughness: 0.8 }), new THREE.MeshStandardMaterial({ color: 0xe9dfcb, roughness: 0.8 }),
+    versoMat, versoMat,
+    new THREE.MeshStandardMaterial({ color: 0xe9dfcb, roughness: 0.8 }), new THREE.MeshStandardMaterial({ color: 0xe9dfcb, roughness: 0.8 }),
+  ]);
+  monte.castShadow = true;
+  const POS_MONTE = [V(0.32, MESA_Y + 0.011, 0.22), V(-0.32, MESA_Y + 0.011, -0.2)];
+  monte.position.copy(POS_MONTE[1]);
+  scene.add(monte);
+
+  const botao = new THREE.Group();
+  const discoBotao = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.011, 32), new THREE.MeshStandardMaterial({ color: 0xf1eadb, roughness: 0.4 }));
+  discoBotao.castShadow = true;
+  const topoBotao = new THREE.Mesh(new THREE.CircleGeometry(0.034, 32), new THREE.MeshStandardMaterial({
+    map: canvasTex(256, 256, (g, w, h) => {
+      g.fillStyle = '#f1eadb'; g.beginPath(); g.arc(w / 2, h / 2, w / 2, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#1b1712'; g.lineWidth = 6; g.beginPath(); g.arc(w / 2, h / 2, w / 2 - 14, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#1b1712'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '800 38px "Alegreya Sans", sans-serif';
+      g.fillText('CARTEADOR', w / 2, h / 2 + 2);
+    }), roughness: 0.4,
+  }));
+  topoBotao.rotation.x = -Math.PI / 2; topoBotao.position.y = 0.0056;
+  botao.add(discoBotao, topoBotao);
+  const POS_BOTAO = [V(-0.3, MESA_Y + 0.0055, 0.34), V(0.3, MESA_Y + 0.0055, -0.34)];
+  botao.position.copy(POS_BOTAO[1]);
+  scene.add(botao);
+
+  // ---------- Fichas ----------
+  const DENOM = [
+    { v: 100, base: '#18171b', faixa: '#c9a25a', txt: '#e8cc8e' },
+    { v: 50, base: '#a3242f', faixa: '#f3ead9', txt: '#fbf3e4' },
+    { v: 10, base: '#ebe3d1', faixa: '#2d5c8c', txt: '#2d5c8c' },
+  ];
+  const fichaGeo = new THREE.CylinderGeometry(FICHA_R, FICHA_R, FICHA_H, 28);
+  for (const d of DENOM) {
+    const lado = canvasTex(256, 16, (g, w, h) => { g.fillStyle = d.base; g.fillRect(0, 0, w, h); g.fillStyle = d.faixa; for (let k = 0; k < 8; k++) g.fillRect(k * 32 + 8, 0, 12, h); });
+    const topo = canvasTex(128, 128, (g, w) => {
+      g.fillStyle = d.base; g.beginPath(); g.arc(64, 64, 64, 0, Math.PI * 2); g.fill();
+      g.fillStyle = d.faixa;
+      for (let k = 0; k < 8; k++) { g.save(); g.translate(64, 64); g.rotate((k * Math.PI) / 4); g.fillRect(-7, -64, 14, 16); g.restore(); }
+      g.strokeStyle = d.faixa; g.lineWidth = 3; g.beginPath(); g.arc(64, 64, 40, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = d.txt; g.font = '800 34px "Alegreya Sans", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(String(d.v), w / 2, 66);
+    });
+    const mTopo = new THREE.MeshStandardMaterial({ map: topo, roughness: 0.4 });
+    d.mats = [new THREE.MeshStandardMaterial({ map: lado, roughness: 0.45 }), mTopo, mTopo];
+  }
+  const OFFS = [[0, 0], [0.058, 0], [-0.058, 0], [0.029, -0.052], [-0.029, -0.052], [0.087, -0.052], [-0.087, -0.052], [0.029, 0.052], [-0.029, 0.052], [0.116, 0], [-0.116, 0]];
+  function decompoe(n) { const r = []; for (const d of DENOM) { const k = Math.floor(n / d.v); n -= k * d.v; r.push(k); } return r; }
+  function montaPilha(grupo, valor) {
+    grupo.clear();
+    const maxAlt = grupo.userData.maxAlt || 12;
+    let col = 0, idx = 0;
+    decompoe(Math.max(0, valor)).forEach((k, di) => {
+      while (k > 0) {
+        const n = Math.min(k, maxAlt); k -= n;
+        const [ox, oz] = OFFS[col % OFFS.length]; col++;
+        for (let j = 0; j < n; j++) {
+          const m = new THREE.Mesh(fichaGeo, DENOM[di].mats);
+          m.position.set(ox + (pseudo(idx) - 0.5) * 0.004, FICHA_H / 2 + j * FICHA_H, oz + (pseudo(idx + 7) - 0.5) * 0.004);
+          m.rotation.y = pseudo(idx + 3) * Math.PI * 2;
+          m.castShadow = true; m.receiveShadow = true;
+          grupo.add(m); idx++;
+        }
+      }
+    });
+  }
+  const pilhas = [new THREE.Group(), new THREE.Group()];
+  pilhas[0].position.set(-0.5, MESA_Y, 0.4);
+  pilhas[1].position.set(0.5, MESA_Y, -0.42);
+  const pote = new THREE.Group();
+  pote.position.set(0, MESA_Y, -0.02); pote.userData.maxAlt = 6;
+  scene.add(pilhas[0], pilhas[1], pote);
+
+  // ---------- Animação ----------
+  const tweens = new Set();
+  const easeInOut = (k) => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+  function tween(dur, update, ease = easeInOut) {
+    return new Promise((resolve) => tweens.add({ t0: performance.now(), dur: reduzMov ? Math.min(dur, 120) : dur, update, ease, resolve }));
+  }
+  function acabaTweens() { for (const tw of tweens) { tw.update(1); tw.resolve(); } tweens.clear(); }
+  function mover(obj, alvo, dur = 420, { arco = 0, delay = 0 } = {}) {
+    const vai = () => {
+      const p0 = obj.position.clone(), r0 = { x: obj.rotation.x, y: obj.rotation.y, z: obj.rotation.z };
+      const p1 = alvo.pos || p0, r1 = alvo.rot || r0;
+      return tween(dur, (k) => {
+        obj.position.lerpVectors(p0, p1, k);
+        if (arco) obj.position.y += Math.sin(k * Math.PI) * arco;
+        obj.rotation.set(r0.x + (r1.x - r0.x) * k, r0.y + (r1.y - r0.y) * k, r0.z + (r1.z - r0.z) * k);
+      });
+    };
+    return delay ? new Promise((r) => setTimeout(r, reduzMov ? 0 : delay)).then(vai) : vai();
+  }
+  async function voarFichas(de, para, valor) {
+    if (valor <= 0) return;
+    const meshes = [];
+    decompoe(valor).forEach((k, di) => { for (let j = 0; j < Math.min(k, 3); j++) meshes.push(new THREE.Mesh(fichaGeo, DENOM[di].mats)); });
+    if (!meshes.length) meshes.push(new THREE.Mesh(fichaGeo, DENOM[2].mats));
+    await Promise.all(meshes.slice(0, 6).map((m, k) => {
+      m.position.copy(de.position).add(V((Math.random() - 0.5) * 0.04, 0.03 + k * FICHA_H, (Math.random() - 0.5) * 0.04));
+      m.castShadow = true; scene.add(m);
+      const alvo = para.position.clone().add(V((Math.random() - 0.5) * 0.08, 0.02 + k * 0.002, (Math.random() - 0.5) * 0.08));
+      return mover(m, { pos: alvo, rot: { x: 0, y: Math.random() * 3, z: 0 } }, 420, { arco: 0.12, delay: k * 55 }).then(() => scene.remove(m));
+    }));
+  }
+
+  // ---------- Câmera, toque e quadro a quadro ----------
+  const camBase = V(0, 1.3, 1.42), camAlvo = V(0, 0.76, 0.02);
+  const ponteiro = new THREE.Vector2(), parallax = new THREE.Vector2(), alvoParallax = new THREE.Vector2();
+  function ajusta() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    estadoLayout.retrato = w / h < 0.85;
+    if (estadoLayout.retrato) { camera.fov = 66; camBase.set(0, 1.68, 1.7); camAlvo.set(0, 0.63, 0.12); }
+    else { camera.fov = 50; camBase.set(0, 1.3, 1.42); camAlvo.set(0, 0.76, 0.02); }
+    camera.updateProjectionMatrix();
+  }
+  ajusta();
+  window.addEventListener('resize', ajusta);
+  window.addEventListener('pointermove', (e) => {
+    if (reduzMov) return;
+    alvoParallax.set((e.clientX / window.innerWidth) * 2 - 1, (e.clientY / window.innerHeight) * 2 - 1);
+  });
+  const raycaster = new THREE.Raycaster();
+  function cartaSob(x, y, grupos) {
+    const r = canvas.getBoundingClientRect();
+    ponteiro.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ponteiro, camera);
+    const hit = raycaster.intersectObjects(grupos, true)[0];
+    return hit ? hit.object.parent : null;
+  }
+  const tmp = new THREE.Vector3();
+  function projeta(v) {
+    tmp.copy(v).project(camera);
+    return { x: (tmp.x * 0.5 + 0.5) * window.innerWidth, y: (-tmp.y * 0.5 + 0.5) * window.innerHeight };
+  }
+
+  let antes = performance.now(), aoQuadro = null;
+  function quadro(agora) {
+    const dt = Math.max(0, Math.min(0.05, (agora - antes) / 1000)), t = agora / 1000; // o 1º quadro pode vir com hora anterior
+    antes = agora;
+    for (const tw of tweens) {
+      const k = Math.min(1, (agora - tw.t0) / tw.dur);
+      tw.update(tw.ease(k));
+      if (k >= 1) { tweens.delete(tw); tw.resolve(); }
+    }
+    if (t > proxFumaca) { soltaFumaca(); proxFumaca = t + 0.16; }
+    for (const s of fumaca) {
+      const u = s.userData;
+      if (u.vida >= u.dur) { s.visible = false; continue; }
+      u.vida += dt;
+      const k = u.vida / u.dur;
+      s.position.y += (0.05 + 0.03 * k) * dt;
+      s.position.x += (u.vx + Math.sin(t * 0.9 + u.fase) * 0.012) * dt;
+      s.position.z += (u.vz + Math.cos(t * 0.7 + u.fase) * 0.008) * dt;
+      s.scale.setScalar(0.02 + k * 0.32);
+      s.material.opacity = 0.2 * (k < 0.1 ? k / 0.1 : Math.pow(1 - k, 1.3));
+      s.material.rotation += u.giro * dt;
+    }
+    for (const s of nevoa) {
+      s.position.x = s.userData.base.x + Math.sin(t * 0.05 + s.userData.fase) * 0.25;
+      s.position.y = s.userData.base.y + Math.sin(t * 0.07 + s.userData.fase) * 0.06;
+      s.material.rotation = t * 0.01 + s.userData.fase;
+    }
+    const pisca = 0.75 + Math.sin(t * 7.3) * 0.12 + Math.sin(t * 13.1) * 0.08;
+    brilhoBrasa.material.opacity = pisca;
+    brasa.material.color.setRGB(1, 0.32 + pisca * 0.12, 0.1);
+    neon.material.opacity = Math.random() < 0.004 ? 0.35 : 0.92;
+    parallax.lerp(alvoParallax, Math.min(1, dt * 3));
+    clawd.atualiza(t, dt, parallax);
+    camera.position.set(camBase.x + parallax.x * 0.05, camBase.y - parallax.y * 0.025 + (reduzMov ? 0 : Math.sin(t * 0.4) * 0.004), camBase.z);
+    camera.lookAt(camAlvo);
+    renderer.render(scene, camera);
+    if (aoQuadro) aoQuadro();
+    requestAnimationFrame(quadro);
+  }
+  requestAnimationFrame(quadro);
+
+  return {
+    canvas, clawd, mover, tween, acabaTweens, voarFichas, montaPilha, pilhas, pote, monte, botao, POS_MONTE, POS_BOTAO,
+    novaCarta, marca, alvoCarta, posDescarte, zeraDescartes, cartaSob, projeta,
+    remove: (o) => scene.remove(o),
+    get retrato() { return estadoLayout.retrato; },
+    set aoQuadro(fn) { aoQuadro = fn; },
+  };
+}
+
+// Condução da partida: botões, treino guiado e as jogadas do Claude.
+
+const P = window.Poker;
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => Math.round(n).toLocaleString('pt-BR');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const qtd = (n) => (n === 0 ? 'nenhuma carta' : n === 1 ? '1 carta' : `${n} cartas`);
+const CANCEL = { cancelado: true };
+let sessao = 0;
+const guard = (p) => { const s = sessao; return Promise.resolve(p).then((v) => { if (s !== sessao) throw CANCEL; return v; }); };
+
+const jazz = new window.Jazz();
+let C = null, mesa = null, modo = null, emJogo = false, revelado = false, trocaAtiva = null, fechaMaosCb = null;
+const mostra = { stacks: [P.START, P.START], pote: 0 };
+const cartas3D = new Map(), descartes = [], selecao = new Set(), destaque = new Set();
+
+// ---------- Claude ----------
+let claudeEstado = 'procurando', samplePromise = null, ctlClaude = null;
+const TEXTO_STATUS = {
+  procurando: 'Procurando o Claude…',
+  pronto: 'Claude na mesa. Na primeira jogada dele, o claude.ai pede sua permissão.',
+  ok: 'Claude na mesa.',
+  fora: 'Fora do claude.ai o Claude não joga: o adversário é automático.',
+  negado: 'Sem permissão pro Claude: o adversário é automático.',
+};
+const PERMANENTES = ['not_granted', 'sampling_disabled', 'not_declared', 'capability_disabled', 'capability_removed'];
+const usandoClaude = () => claudeEstado === 'pronto' || claudeEstado === 'ok';
+
+function obterSample() {
+  if (!samplePromise) {
+    const c = window.claude;
+    samplePromise = c && typeof c.use === 'function' ? Promise.resolve(c.use('sample')).catch(() => null) : Promise.resolve(null);
+    samplePromise.then((s) => { if (claudeEstado === 'procurando') claudeEstado = s ? 'pronto' : 'fora'; atualizaStatus(); });
+  }
+  return samplePromise;
+}
+function atualizaStatus() {
+  $('status-claude').dataset.estado = claudeEstado;
+  $('status-claude-txt').textContent = TEXTO_STATUS[claudeEstado];
+  $('rotulo-claude').textContent = nomeClaude(false);
+}
+function nomeClaude(auto) {
+  if (modo === 'treino') return 'Claude · treino';
+  return auto || !usandoClaude() ? 'Claude · automático' : 'Claude';
+}
+async function perguntaClaude(prompt, { json = true, silencioso = false } = {}) {
+  const sample = await obterSample();
+  if (!sample || !usandoClaude()) return null;
+  const ctl = ctlClaude = new AbortController();
+  try {
+    const opts = { modelTier: 'quick', cache: false, signal: ctl.signal };
+    const r = json ? await sample.json(prompt, opts) : await sample(prompt, opts);
+    if (claudeEstado !== 'ok') { claudeEstado = 'ok'; atualizaStatus(); }
+    return r;
+  } catch (e) {
+    const code = e && e.code;
+    if (code === 'cancelled') return null;
+    if (PERMANENTES.includes(code)) {
+      claudeEstado = 'negado'; atualizaStatus();
+      aviso('O Claude não tem permissão nesta página. Daqui pra frente o adversário é automático.');
+    } else if (!silencioso) {
+      if (code === 'rate_limited') aviso('O Claude chegou no limite de uso. Esta jogada foi automática.');
+      else if (code === 'session_expired') aviso('Sua sessão no claude.ai expirou. Entre de novo pra jogar com o Claude.');
+      else aviso('O Claude não respondeu. Esta jogada foi automática.');
+    }
+    return null;
+  } finally { if (ctlClaude === ctl) ctlClaude = null; }
+}
+const limpaFala = (t) => String(t || '').replace(/^[\s"“”'«»]+|[\s"“”'«»]+$/g, '').slice(0, 140);
+
+const cerebroClaude = {
+  async decide(m, i, L) {
+    const r = await perguntaClaude(P.prompts.jogada(m, i, L));
+    if (r && typeof r === 'object' && r.acao) return { acao: r.acao, valor: r.valor, fala: limpaFala(r.fala), cara: P.normCara(r.cara) };
+    await sleep(700 + Math.random() * 600);
+    const s = P.sanitize(P.heuristica.decide(m, i, L), L);
+    return { ...s, fala: P.heuristica.fala(s.acao, s.valor), cara: P.heuristica.cara(s.acao), auto: true };
+  },
+  async troca(m, i) {
+    const r = await perguntaClaude(P.prompts.troca(m, i));
+    if (r && typeof r === 'object' && Array.isArray(r.trocar)) return { trocar: r.trocar, fala: limpaFala(r.fala), cara: P.normCara(r.cara) };
+    await sleep(600 + Math.random() * 500);
+    const t = P.heuristica.troca(m.h.hands[i]);
+    return { trocar: t, fala: P.heuristica.fala('troca', t.length), cara: P.heuristica.cara('troca'), auto: true };
+  },
+  async reage(m, i) {
+    const r = await perguntaClaude(P.prompts.reacao(m, i), { json: false, silencioso: true });
+    if (r && r.text) return limpaFala(r.text);
+    if (usandoClaude()) return null;
+    const res = m.h.result;
+    return P.heuristica.fala(res.winner === -1 ? 'empate' : res.winner === i ? 'ganhou' : 'perdeu');
+  },
+};
+
+function cerebroTreino() {
+  const jogadas = [
+    { acao: 'pagar', fala: 'Pago pra ver.', cara: 'desconfiado' },
+    { acao: 'apostar', valor: 40, fala: 'Mesa? Então vai 40.', cara: 'confiante' },
+    { acao: 'pagar', fala: 'Pago. Mostra essa mão aí.', cara: 'nervoso' },
+  ];
+  let k = 0;
+  return {
+    async decide() { await sleep(900); return jogadas[k++] || { acao: 'pagar' }; },
+    async troca(m, i) { await sleep(800); const idx = m.h.hands[i].findIndex((c) => c.id === '13s'); return { trocar: idx >= 0 ? [idx] : [], fala: 'Me dá uma só.', cara: 'neutro' }; },
+    async reage() { await sleep(400); return 'Treino é treino. Valendo, eu não vou ser tão bonzinho.'; },
+  };
+}
+
+function deckTreino() {
+  const c = P.card;
+  const voce = [c(11, 's'), c(11, 'h'), c(14, 'd'), c(9, 'c'), c(7, 'h')];
+  const claude = [c(12, 'c'), c(12, 'd'), c(8, 's'), c(8, 'h'), c(13, 's')];
+  const compra = [c(11, 'c'), c(10, 'd'), c(8, 'c'), c(7, 'c')];
+  const usados = new Set([...voce, ...claude, ...compra].map((x) => x.id));
+  const deck = [];
+  for (let k = 0; k < 5; k++) deck.push(voce[k], claude[k]);
+  return deck.concat(compra, P.shuffle(P.makeDeck().filter((x) => !usados.has(x.id))));
+}
+
+// ---------- Treino ----------
+const ORDEM = ['pingo', 'cartas', 'par', 'ranking', 'vez:bet1:0', 'claude:bet1:1', 'troca', 'troca-voce', 'troca-claude', 'vez:bet2:0', 'vez:bet2:2', 'claude:bet2:3', 'mostra', 'fim'];
+const PASSOS = {
+  pingo: { proximo: true, txt: 'Antes de cada mão, cada um põe <b>10 fichas</b> no meio da mesa. Isso é o <b>pingo</b>: garante que sempre tem alguma coisa em disputa, mesmo que ninguém aposte.' },
+  cartas: { proximo: true, txt: 'Cada um recebe <b>5 cartas fechadas</b>. As suas estão viradas pra você, e as do Claude só ele vê. O baralho é cortado: vai só do <b>7 ao Ás</b>, 32 cartas no total.' },
+  par: { proximo: true, destaque: ['11s', '11h'], txt: 'Você tem um <b>par de valetes</b>: duas cartas do mesmo valor. Pra começar, é uma mão boa.' },
+  ranking: {
+    maos: ['Par', 'Flush', 'Full'], txt: 'Leia a lista das mãos e aperte <b>Entendi</b>.',
+    nota: 'Ganha quem tiver a mão mais forte no final. O seu par está lá embaixo, perto do fim. Repare que aqui o <b>flush vale mais que o full</b>, porque com esse baralho ele sai menos. A lista fica sempre no botão <b>Mãos</b>, lá em cima.',
+  },
+  'vez:bet1:0': { gate: { acao: 'apostar', valor: 20 }, txt: 'Quem não deu as cartas fala primeiro. Desta vez o Claude deu, então <b>é você</b>. Você pode dizer <b>mesa</b> (passar sem apostar), <b>apostar</b> ou, se alguém apostar, <b>sair</b>. Com par de valetes vale apostar: <b>aposte 20</b>.' },
+  'claude:bet1:1': { proximo: true, txt: 'O Claude <b>pagou</b>: pôs as mesmas 20 fichas. Quando os dois põem o mesmo tanto, a rodada de apostas acaba. Agora o pote tem 60. Repare na <b>cara</b> dele: o Claude escolhe a cara que faz, e ela pode ser blefe.' },
+  troca: { txt: 'Hora da <b>troca</b>: cada um pode trocar até 3 cartas, uma vez só. Guarde o par de valetes e <b>toque nas outras 3 cartas</b> pra marcar. Depois aperte o botão de trocar.' },
+  'troca-voce': { proximo: true, destaque: ['11s', '11h', '11c'], txt: 'Veio <b>outro valete</b>! Três cartas do mesmo valor formam uma <b>trinca</b>, que ganha de qualquer par e de dois pares.' },
+  'troca-claude': { proximo: true, txt: 'O Claude trocou <b>só 1 carta</b>. Quem troca uma normalmente já tem dois pares, ou está tentando fechar uma sequência ou um flush. Reparar em quantas cartas o outro troca é metade do jogo.' },
+  'vez:bet2:0': { gate: { acao: 'mesa' }, txt: 'Segunda rodada de apostas. Quem apostou primeiro na rodada anterior fala primeiro: <b>você</b>. Desta vez diga <b>mesa</b>, pra ver o que o Claude faz.' },
+  'vez:bet2:2': { gate: { acao: 'repicar', valor: 40 }, txt: 'Ele <b>apostou 40</b>. Agora você pode <b>pagar</b>, <b>repicar</b> (pagar e ainda aumentar) ou <b>sair</b> e perder o que já pôs. Com uma trinca, vale repicar: <b>pague os 40 e aumente mais 40</b>.' },
+  'claude:bet2:3': { proximo: true, txt: 'Ele <b>pagou</b>. Acabaram as apostas, então os dois mostram as cartas.' },
+  mostra: { proximo: true, txt: 'Sua <b>trinca de valetes</b> ganha dos <b>dois pares</b> do Claude (damas e oitos). O pote de <b>220 fichas</b> é seu.' },
+  fim: {
+    botoes: [{ txt: 'Repetir o treino', v: 'repetir' }, { txt: 'Jogar pra valer', cls: 'ouro', v: 'valer' }],
+    txt: 'Pronto, essa é a mão inteira: pingo, cartas, aposta, troca, aposta e mostrar. Se alguém apostar e o outro sair, quem apostou leva o pote <b>sem mostrar as cartas</b>, e é aí que mora o blefe. Em muitas mesas só pode abrir as apostas quem tem par de valetes ou melhor; aqui a abertura é livre. As fichas do treino não contam.',
+  },
+};
+function mostraTreino(chave, p) {
+  $('treino').hidden = false;
+  $('treino-passo').textContent = `Treino · ${ORDEM.indexOf(chave) + 1} de ${ORDEM.length}`;
+  $('treino-texto').innerHTML = p.txt;
+  $('treino-botoes').replaceChildren();
+}
+function roteiroTreino() {
+  return {
+    exigir: ['14d', '9c', '7h'],
+    async passo(chave) {
+      const p = PASSOS[chave];
+      if (!p) return null;
+      mostraTreino(chave, p);
+      if (p.destaque) { p.destaque.forEach((id) => destaque.add(id)); await layoutMao(0, 260); }
+      let v = null;
+      if (p.maos) await abreMaos({ nota: p.nota, destacar: p.maos });
+      else if (p.botoes) v = await esperaBotoes(p.botoes, $('treino-botoes'));
+      else if (p.proximo) await esperaBotoes([{ txt: 'Próximo', cls: 'ouro', v: 1 }], $('treino-botoes'));
+      if (p.destaque) { destaque.clear(); await layoutMao(0, 260); }
+      return v;
+    },
+    async vez(fase, n) {
+      const k = `vez:${fase}:${n}`, p = PASSOS[k];
+      if (!p) return null;
+      mostraTreino(k, p);
+      return p.gate;
+    },
+    async depois(fase, n) { return this.passo(`claude:${fase}:${n}`); },
+  };
+}
+
+// ---------- Interface ----------
+function botao(txt, sub, cls, onClick, disabled = false) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn' + (cls ? ' ' + cls : '');
+  const s = document.createElement('span'); s.textContent = txt; b.append(s);
+  if (sub) { const sm = document.createElement('small'); sm.textContent = sub; b.append(sm); }
+  b.disabled = disabled;
+  if (onClick) b.addEventListener('click', onClick);
+  return b;
+}
+function esperaBotoes(lista, alvo = $('botoes')) {
+  return new Promise((resolve) => {
+    alvo.replaceChildren(...lista.map((o) => botao(o.txt, o.sub, o.cls, () => { alvo.replaceChildren(); resolve(o.v); })));
+    focaPrimeiro(alvo);
+  });
+}
+function focaPrimeiro(box) {
+  if (matchMedia('(pointer: coarse)').matches) return;
+  const b = box.querySelector('.guia') || box.querySelector('button:not(:disabled)');
+  if (b) b.focus({ preventScroll: true });
+}
+const estado = (html) => { $('estado').innerHTML = html; };
+const fase = (txt) => { $('fase').textContent = txt; };
+let avisoTimer = 0;
+function aviso(txt) {
+  const a = $('aviso');
+  a.textContent = txt; a.hidden = false;
+  clearTimeout(avisoTimer);
+  avisoTimer = setTimeout(() => { a.hidden = true; }, 4200);
+}
+function falaClaude(texto, acao, auto) {
+  C?.clawd.pensar(false);
+  if (texto) C?.clawd.falar(texto.length);
+  const b = $('balao');
+  b.hidden = false; b.classList.remove('pensando');
+  $('balao-nome').textContent = nomeClaude(auto);
+  $('balao-acao').textContent = acao || '';
+  $('balao-fala').textContent = texto ? `“${texto}”` : '';
+}
+function pensando() {
+  C?.clawd.pensar(true);
+  const b = $('balao');
+  b.hidden = false; b.classList.add('pensando');
+  $('balao-nome').textContent = nomeClaude(false);
+  $('balao-acao').textContent = 'pensando';
+  $('balao-fala').innerHTML = '<span class="pontos"><i></i><i></i><i></i></span>';
+}
+const escondeBalao = () => { $('balao').hidden = true; };
+function mostraResultado(titulo, linha) { $('resultado').hidden = false; $('resultado-titulo').textContent = titulo; $('resultado-linha').textContent = linha; }
+const escondeResultado = () => { $('resultado').hidden = true; };
+const pontoBalao = new THREE.Vector3();
+function posicionaBalao() {
+  const b = $('balao');
+  if (b.hidden) return;
+  const bw = b.offsetWidth, bh = b.offsetHeight, W = window.innerWidth, H = window.innerHeight;
+  const topo = $('placar').hidden ? 12 : $('placar').getBoundingClientRect().bottom + 4;
+  // Do lado do boneco, pra cara dele ficar à mostra. Sem espaço dos lados (celular), em cima da cabeça
+  // se couber abaixo do placar, senão logo abaixo do bigode, por cima da mesa.
+  const dir = C.projeta(C.clawd.ponto('dir', pontoBalao)), esq = C.projeta(C.clawd.ponto('esq', pontoBalao));
+  let lado, x, y, alvo = null;
+  if (W - dir.x - 26 >= bw) { lado = 'dir'; x = dir.x + 14; alvo = dir; }
+  else if (esq.x - 26 >= bw) { lado = 'esq'; x = esq.x - 14 - bw; alvo = esq; }
+  if (alvo) {
+    y = clamp(alvo.y - bh / 2, topo, H - bh - 12);
+    b.style.setProperty('--cauda-y', `${Math.round(clamp(alvo.y - y, 16, bh - 16))}px`);
+  } else {
+    let p = C.projeta(C.clawd.ponto('topo', pontoBalao));
+    lado = p.y - bh - 10 >= topo ? 'cima' : 'baixo';
+    if (lado === 'baixo') p = C.projeta(C.clawd.ponto('baixo', pontoBalao));
+    x = clamp(p.x - bw / 2, 12, W - bw - 12);
+    y = clamp(lado === 'cima' ? p.y - bh - 10 : p.y + 12, topo, H - bh - 12);
+    b.style.setProperty('--cauda', `${Math.round(clamp(p.x - x, 22, bw - 22))}px`);
+  }
+  b.dataset.lado = lado;
+  b.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+}
+function acaoTexto(rec) {
+  switch (rec.acao) {
+    case 'mesa': return 'disse mesa';
+    case 'apostar': return `apostou ${fmt(rec.valor)}`;
+    case 'pagar': return `pagou ${fmt(rec.valor)}`;
+    case 'repicar': return `pagou ${fmt(rec.pagou)} e repicou mais ${fmt(rec.valor)}`;
+    case 'sair': return 'saiu da mão';
+    default: return '';
+  }
+}
+
+// Mãos, da mais forte pra mais fraca.
+const MAOS = [
+  ['Straight flush', 'Sequência toda do mesmo naipe.', '10♥ J♥ Q♥ K♥ A♥'],
+  ['Quadra', 'Quatro cartas do mesmo valor.', '9♠ 9♥ 9♦ 9♣ K♠'],
+  ['Flush', 'Cinco cartas do mesmo naipe.', '7♦ 9♦ J♦ Q♦ A♦'],
+  ['Full', 'Uma trinca e um par.', 'J♠ J♥ J♣ 8♦ 8♣'],
+  ['Sequência', 'Cinco valores em seguida.', '8♣ 9♦ 10♠ J♥ Q♣'],
+  ['Trinca', 'Três cartas do mesmo valor.', 'Q♠ Q♥ Q♦ 7♣ 10♠'],
+  ['Dois pares', 'Dois pares diferentes.', 'K♠ K♦ 8♥ 8♣ A♠'],
+  ['Par', 'Duas cartas do mesmo valor.', 'J♠ J♥ A♦ 9♣ 7♥'],
+  ['Carta alta', 'Nada formado: vale a carta mais alta.', 'A♣ J♦ 10♠ 8♥ 7♣'],
+];
+function montaListaMaos() {
+  $('lista-maos').replaceChildren(...MAOS.map(([nome, desc, cartas]) => {
+    const li = document.createElement('li'); li.dataset.nome = nome;
+    const n = document.createElement('span'); n.className = 'mao-nome'; n.textContent = nome;
+    const d = document.createElement('span'); d.className = 'mao-desc'; d.textContent = desc;
+    const c = document.createElement('span'); c.className = 'mao-cartas';
+    for (const t of cartas.split(' ')) { const s = document.createElement('span'); s.textContent = t; if (/[♥♦]/.test(t)) s.className = 'vermelho'; c.append(s); }
+    li.append(n, d, c);
+    return li;
+  }));
+}
+function abreMaos({ nota, destacar } = {}) {
+  $('modal-maos').hidden = false;
+  $('maos-treino').hidden = !nota;
+  if (nota) $('maos-treino').innerHTML = nota;
+  for (const li of $('lista-maos').children) li.classList.toggle('destaque', !!destacar && destacar.includes(li.dataset.nome));
+  $('bt-fechar-maos').textContent = nota ? 'Entendi' : 'Fechar';
+  $('bt-fechar-maos').focus({ preventScroll: true });
+  return new Promise((res) => { fechaMaosCb = res; });
+}
+function fechaMaos() {
+  $('modal-maos').hidden = true;
+  const cb = fechaMaosCb; fechaMaosCb = null;
+  if (cb) cb();
+}
+
+// ---------- Jogadas do jogador ----------
+function pedirJogada(L, gate) {
+  return new Promise((resolve) => {
+    const box = $('botoes');
+    const pode = (a) => !gate || gate.acao === a;
+    const guia = (a) => (gate && gate.acao === a ? 'ouro guia' : '');
+    const fim = (acao, valor = 0) => { box.replaceChildren(); resolve({ acao, valor }); };
+    const itens = [];
+    if (L.toCall === 0) {
+      itens.push(botao('Mesa', 'passar sem apostar', guia('mesa'), () => fim('mesa'), !pode('mesa')));
+      if (L.acoes.includes('apostar')) itens.push(seletor('apostar', L, gate, fim, pode, guia));
+    } else {
+      itens.push(botao('Sair', 'desistir da mão', ('vinho ' + guia('sair')).trim(), () => fim('sair'), !pode('sair')));
+      itens.push(botao(`Pagar ${fmt(L.pagar)}`, 'acompanhar a aposta', guia('pagar'), () => fim('pagar'), !pode('pagar')));
+      if (L.acoes.includes('repicar')) itens.push(seletor('repicar', L, gate, fim, pode, guia));
+    }
+    box.replaceChildren(...itens);
+    focaPrimeiro(box);
+  });
+}
+function seletor(acao, L, gate, fim, pode, guia) {
+  let valor = gate && gate.valor ? gate.valor : clamp(acao === 'apostar' ? 20 : Math.max(L.toCall, 20), L.min, L.max);
+  const travado = !!gate || !pode(acao);
+  const wrap = document.createElement('div'); wrap.className = 'grupo';
+  const caixa = document.createElement('div'); caixa.className = 'valor';
+  const menos = document.createElement('button'); menos.type = 'button'; menos.className = 'passo'; menos.textContent = '−'; menos.setAttribute('aria-label', 'Diminuir 10 fichas');
+  const mais = document.createElement('button'); mais.type = 'button'; mais.className = 'passo'; mais.textContent = '+'; mais.setAttribute('aria-label', 'Aumentar 10 fichas');
+  const out = document.createElement('output'); out.id = 'valor-' + acao;
+  const sub = acao === 'apostar' ? `de ${L.min} a ${L.max}` : `paga ${fmt(L.toCall)} e aumenta`;
+  const principal = botao('', sub, guia(acao), () => fim(acao, valor), !pode(acao));
+  const atualiza = () => {
+    out.textContent = fmt(valor);
+    principal.querySelector('span').textContent = acao === 'apostar' ? `Apostar ${fmt(valor)}` : `Repicar +${fmt(valor)}`;
+    menos.disabled = travado || valor <= L.min;
+    mais.disabled = travado || valor >= L.max;
+  };
+  menos.addEventListener('click', () => { valor = Math.max(L.min, valor - P.STEP); atualiza(); });
+  mais.addEventListener('click', () => { valor = Math.min(L.max, valor + P.STEP); atualiza(); });
+  caixa.append(menos, out, mais);
+  wrap.append(caixa, principal);
+  atualiza();
+  return wrap;
+}
+function pedirTroca(exigir) {
+  selecao.clear();
+  return new Promise((resolve) => {
+    const box = $('botoes');
+    const b = botao('Ficar com todas', 'não trocar nenhuma', '', () => {
+      const idxs = mesa.h.hands[0].map((c, k) => (selecao.has(c.id) ? k : -1)).filter((k) => k >= 0);
+      trocaAtiva = null; box.replaceChildren(); C.canvas.style.cursor = '';
+      for (const c of mesa.h.hands[0]) { const g = cartas3D.get(c.id); if (g) C.marca(g, null); }
+      selecao.clear();
+      resolve(idxs);
+    });
+    const atualiza = () => {
+      const n = selecao.size;
+      b.querySelector('span').textContent = n ? `Trocar ${qtd(n)}` : 'Ficar com todas';
+      b.querySelector('small').textContent = n ? 'pegar novas do monte' : 'não trocar nenhuma';
+      const certo = !exigir || (n === exigir.length && exigir.every((id) => selecao.has(id)));
+      b.className = 'btn' + (n ? ' ouro' : '') + (exigir && certo ? ' guia' : '');
+      b.disabled = !certo;
+      estado(n
+        ? `<strong>${n} de 3</strong> marcada${n > 1 ? 's' : ''} pra trocar. Toque de novo pra desmarcar.`
+        : '<strong>Sua vez de trocar.</strong> Toque nas cartas que quer trocar, até 3, ou fique com todas.');
+    };
+    trocaAtiva = { atualiza, exigir };
+    box.replaceChildren(b);
+    atualiza();
+  });
+}
+function alternaCarta(g) {
+  if (!trocaAtiva || !g) return;
+  const id = g.userData.carta.id;
+  if (selecao.has(id)) selecao.delete(id);
+  else {
+    if (trocaAtiva.exigir && !trocaAtiva.exigir.includes(id)) { aviso('Esse valete faz parte do seu par. Guarde ele e marque as outras.'); return; }
+    if (selecao.size >= P.MAX_TROCA) { aviso('Dá pra trocar no máximo 3 cartas.'); return; }
+    selecao.add(id);
+  }
+  layoutMao(0, 160);
+  trocaAtiva.atualiza();
+}
+const gruposVoce = () => (mesa && mesa.h ? mesa.h.hands[0].map((c) => cartas3D.get(c.id)).filter(Boolean) : []);
+
+// ---------- Mesa 3D ----------
+function placarHTML() {
+  $('fichas-voce').textContent = fmt(mostra.stacks[0]);
+  $('fichas-claude').textContent = fmt(mostra.stacks[1]);
+  $('fichas-pote').textContent = fmt(mostra.pote);
+}
+function montaPilhas() {
+  C.montaPilha(C.pilhas[0], mostra.stacks[0]);
+  C.montaPilha(C.pilhas[1], mostra.stacks[1]);
+  C.montaPilha(C.pote, mostra.pote);
+  placarHTML();
+}
+function sincroniza() {
+  mostra.stacks = mesa.stacks.slice();
+  mostra.pote = mesa.h && mesa.h.phase !== 'fim' ? mesa.h.pot : 0;
+  montaPilhas();
+}
+function layoutMao(i, dur = 300, escalonado = false) {
+  const mao = mesa.h.hands[i];
+  return Promise.all(mao.map((c, k) => {
+    const g = cartas3D.get(c.id);
+    if (!g) return null;
+    const flags = i === 0 ? { sobe: selecao.has(c.id) || destaque.has(c.id) } : { revelado };
+    if (i === 0) C.marca(g, selecao.has(c.id) ? 'troca' : destaque.has(c.id) ? 'destaque' : null);
+    return C.mover(g, C.alvoCarta(i, k, mao.length, flags), dur, { arco: escalonado ? 0.05 : 0, delay: escalonado ? k * 70 : 0 });
+  }));
+}
+async function darCartas(h) {
+  const proms = [];
+  let n = 0;
+  for (let k = 0; k < 5; k++) {
+    for (const i of [h.first, h.dealer]) {
+      const c = h.hands[i][k], g = C.novaCarta(c);
+      cartas3D.set(c.id, g);
+      proms.push(C.mover(g, C.alvoCarta(i, k, 5, i === 0 ? {} : { revelado: false }), 380, { arco: 0.06, delay: n * 85 }));
+      n++;
+    }
+  }
+  await Promise.all(proms);
+}
+async function paraDescarte(cartas) {
+  await Promise.all(cartas.map((c, k) => {
+    const g = cartas3D.get(c.id);
+    if (!g) return null;
+    cartas3D.delete(c.id); C.marca(g, null); descartes.push(g);
+    return C.mover(g, C.posDescarte(), 360, { arco: 0.05, delay: k * 70 });
+  }));
+}
+async function animaTroca(i, res) {
+  await paraDescarte(res.out);
+  for (const c of res.novos) cartas3D.set(c.id, C.novaCarta(c));
+  await layoutMao(i, 420, true);
+}
+async function animaAcao(i, rec) {
+  const total = (rec.valor || 0) + (rec.pagou || 0);
+  if (total > 0) {
+    mostra.stacks[i] = mesa.stacks[i]; C.montaPilha(C.pilhas[i], mostra.stacks[i]); placarHTML();
+    await C.voarFichas(C.pilhas[i], C.pote, total);
+    mostra.pote = mesa.h.pot; C.montaPilha(C.pote, mostra.pote); placarHTML();
+  } else if (rec.acao === 'sair') await paraDescarte(mesa.h.hands[i].slice());
+  else await sleep(300);
+}
+function moveCarteador(d) {
+  return Promise.all([
+    C.mover(C.botao, { pos: C.POS_BOTAO[d].clone() }, 500, { arco: 0.05 }),
+    C.mover(C.monte, { pos: C.POS_MONTE[d].clone() }, 500, { arco: 0.05 }),
+  ]);
+}
+async function recolher() {
+  escondeResultado(); escondeBalao(); selecao.clear(); destaque.clear();
+  const todas = [...cartas3D.values(), ...descartes], alvo = C.monte.position;
+  await Promise.all(todas.map((g, k) => C.mover(g, { pos: alvo.clone().setY(alvo.y + 0.02 + k * 0.0004), rot: { x: 0, y: 0, z: Math.PI } }, 340, { arco: 0.04, delay: k * 16 })));
+  limpaCartas();
+}
+function limpaCartas() {
+  for (const g of [...cartas3D.values(), ...descartes]) C.remove(g);
+  cartas3D.clear(); descartes.length = 0; revelado = false; selecao.clear(); destaque.clear(); C.zeraDescartes();
+}
+
+// ---------- Uma mão inteira ----------
+async function rodada(cerebro, roteiro) {
+  const h = mesa.h, R = h.round;
+  let n = 0;
+  while (!R.done) {
+    const i = R.toAct, L = mesa.legal(i);
+    if (i === 0) {
+      const gate = roteiro ? await guard(roteiro.vez(h.phase, n)) : null;
+      estado(L.toCall ? `<strong>Sua vez.</strong> Pra continuar na mão você paga ${fmt(L.toCall)}.` : '<strong>Sua vez.</strong> Ninguém apostou nesta rodada ainda.');
+      C?.clawd.olhar('voce');
+      const a = await guard(pedirJogada(L, gate));
+      const rec = mesa.act(0, a);
+      if (rec.valor) C?.clawd.olhar('pote', 1300); // acompanha as suas fichas indo pro meio
+      estado(`Você ${acaoTexto(rec)}.`);
+      await guard(animaAcao(0, rec));
+    } else {
+      pensando();
+      estado(modo !== 'treino' && claudeEstado === 'pronto' ? 'O Claude está pensando… Se o claude.ai pedir permissão, é só permitir.' : 'O Claude está pensando…');
+      const a = await guard(cerebro.decide(mesa, 1, L));
+      const rec = mesa.act(1, a);
+      C?.clawd.cara(a.cara || P.heuristica.cara(rec.acao));
+      falaClaude(a.fala, acaoTexto(rec), a.auto);
+      estado(`O Claude ${acaoTexto(rec)}.`);
+      await guard(animaAcao(1, rec));
+      if (roteiro) await guard(roteiro.depois(h.phase, n));
+    }
+    n++;
+  }
+}
+
+async function jogarMao({ cerebro, roteiro, deck }) {
+  const h = mesa.startHand(deck || P.shuffle(P.makeDeck()));
+  escondeResultado(); escondeBalao();
+  C?.clawd.cara('neutro');
+  fase('Pingo');
+  estado(`Cada um põe <strong>${h.antes[0]}</strong> fichas no meio.`);
+  mostra.stacks = mesa.stacks.slice();
+  C.montaPilha(C.pilhas[0], mostra.stacks[0]); C.montaPilha(C.pilhas[1], mostra.stacks[1]); placarHTML();
+  await guard(Promise.all([C.voarFichas(C.pilhas[0], C.pote, h.antes[0]), C.voarFichas(C.pilhas[1], C.pote, h.antes[1])]));
+  mostra.pote = h.pot; C.montaPilha(C.pote, mostra.pote); placarHTML();
+  if (roteiro) await guard(roteiro.passo('pingo'));
+
+  fase('Cartas');
+  estado(h.dealer === 0 ? 'Você dá as cartas.' : 'O Claude dá as cartas.');
+  C?.clawd.olhar('mesa');
+  await guard(darCartas(h));
+  C?.clawd.olhar('cartas', 1500); // dá uma espiada nas cartas dele
+  if (roteiro) { await guard(roteiro.passo('cartas')); await guard(roteiro.passo('par')); await guard(roteiro.passo('ranking')); }
+
+  fase('1ª rodada de apostas');
+  await guard(rodada(cerebro, roteiro));
+  if (h.folded == null) {
+    mesa.beginDraw();
+    fase('Troca de cartas');
+    for (const i of [h.first, h.dealer]) {
+      let idxs, fala = null, auto = false;
+      if (i === 0) {
+        if (roteiro) await guard(roteiro.passo('troca'));
+        C?.clawd.olhar('cartas-voce');
+        idxs = await guard(pedirTroca(roteiro ? roteiro.exigir : null));
+        C?.clawd.olhar('voce');
+      } else {
+        pensando();
+        estado('O Claude está escolhendo as cartas…');
+        const r = await guard(cerebro.troca(mesa, 1));
+        idxs = r.trocar; fala = r.fala; auto = r.auto;
+        C?.clawd.cara(r.cara || P.heuristica.cara('troca'));
+      }
+      const res = mesa.troca(i, idxs);
+      if (i === 1) { falaClaude(fala, `trocou ${qtd(res.out.length)}`, auto); estado(`O Claude trocou <strong>${qtd(res.out.length)}</strong>.`); }
+      else estado(res.out.length ? `Você trocou <strong>${qtd(res.out.length)}</strong>.` : 'Você ficou com todas.');
+      await guard(animaTroca(i, res));
+      if (i === 1 && res.novos.length) C?.clawd.olhar('cartas', 1300);
+      if (roteiro) await guard(roteiro.passo(i === 0 ? 'troca-voce' : 'troca-claude'));
+    }
+    mesa.beginBet2();
+    fase('2ª rodada de apostas');
+    await guard(rodada(cerebro, roteiro));
+  }
+  const r = h.folded != null ? mesa.resolveFold() : mesa.showdown();
+  await guard(fimMao(h, r, cerebro, roteiro));
+}
+
+async function fimMao(h, r, cerebro, roteiro) {
+  fase(r.tipo === 'saiu' ? 'Fim da mão' : 'Mostra');
+  if (r.tipo !== 'saiu') { revelado = true; escondeBalao(); estado('Cartas na mesa.'); C?.clawd.olhar('cartas-voce', 2200); await guard(layoutMao(1, 560, true)); }
+  mostra.pote = 0; C.montaPilha(C.pote, 0); placarHTML();
+  if (r.winner === -1) await guard(Promise.all([C.voarFichas(C.pote, C.pilhas[0], r.pot / 2), C.voarFichas(C.pote, C.pilhas[1], r.pot / 2)]));
+  else await guard(C.voarFichas(C.pote, C.pilhas[r.winner], r.pot));
+  sincroniza();
+  // Ganhou: comemora (ou dá uma piscadinha, se você saiu); perdeu: murcha; empate: surpresa.
+  C?.clawd.cara(r.winner === -1 ? 'surpreso' : r.winner === 0 ? 'triste' : r.tipo === 'saiu' && Math.random() < 0.4 ? 'piscadinha' : 'feliz');
+  const titulo = r.winner === -1 ? 'Empate: o pote foi dividido' : r.winner === 0 ? `Você levou ${fmt(r.pot)} fichas` : `O Claude levou ${fmt(r.pot)} fichas`;
+  const linha = r.tipo === 'saiu'
+    ? (r.saiu === 1 ? 'O Claude saiu da mão. Quem ganha assim não precisa mostrar as cartas.' : 'Você saiu da mão, então o Claude não precisa mostrar as cartas dele.')
+    : `Você: ${r.nomes[0]} · Claude: ${r.nomes[1]}`;
+  mostraResultado(titulo, linha);
+  estado('');
+  // A frase de reação some sozinha depois de uns segundos, pra não tampar as cartas na mesa.
+  const no = h.no, s = sessao, mesmaMao = () => s === sessao && mesa.h && mesa.h.no === no;
+  Promise.resolve(cerebro.reage(mesa, 1))
+    .then((txt) => { if (txt && mesmaMao()) { falaClaude(txt, '', false); setTimeout(() => { if (mesmaMao()) escondeBalao(); }, 6000); } })
+    .catch(() => {});
+  if (roteiro) await guard(roteiro.passo('mostra'));
+}
+
+async function treino() {
+  mesa = new P.Mesa({ dealer: 1 });
+  mostra.stacks = mesa.stacks.slice(); mostra.pote = 0; montaPilhas();
+  await guard(moveCarteador(1));
+  const roteiro = roteiroTreino();
+  await guard(jogarMao({ cerebro: cerebroTreino(), roteiro, deck: deckTreino() }));
+  const v = await guard(roteiro.passo('fim'));
+  iniciar(v === 'repetir' ? 'treino' : 'valer');
+}
+
+async function jogarPraValer() {
+  mesa = new P.Mesa({});
+  mostra.stacks = mesa.stacks.slice(); mostra.pote = 0; montaPilhas();
+  await guard(moveCarteador(mesa.dealer));
+  for (;;) {
+    await guard(jogarMao({ cerebro: cerebroClaude }));
+    if (mesa.over) break;
+    await guard(esperaBotoes([{ txt: 'Próxima mão', sub: mesa.dealer === 0 ? 'você dá as cartas' : 'o Claude dá as cartas', cls: 'ouro', v: 1 }]));
+    await guard(recolher());
+    await guard(moveCarteador(mesa.dealer));
+  }
+  const ganhou = mesa.stacks[0] > 0;
+  C?.clawd.cara(ganhou ? 'triste' : 'feliz');
+  fase('Fim da partida');
+  mostraResultado(ganhou ? 'Você quebrou o Claude!' : 'O Claude ficou com todas as fichas', `A partida durou ${mesa.handNo} mãos.`);
+  const v = await guard(esperaBotoes([{ txt: 'Jogar de novo', cls: 'ouro', v: 'de-novo' }, { txt: 'Menu', v: 'menu' }]));
+  if (v === 'de-novo') iniciar('valer');
+  else { emJogo = false; abreMenu(); }
+}
+
+function escondeTudo() {
+  $('treino').hidden = true; $('modal-maos').hidden = true; fechaMaosCb = null;
+  escondeResultado(); escondeBalao();
+  $('botoes').replaceChildren(); $('treino-botoes').replaceChildren();
+  trocaAtiva = null; estado(''); fase('');
+}
+function iniciar(m) {
+  if (!C) { $('erro3d').hidden = false; return; }
+  sessao++;
+  if (ctlClaude) ctlClaude.abort();
+  C.acabaTweens(); limpaCartas(); escondeTudo();
+  C.clawd.pensar(false); C.clawd.cara('neutro'); C.clawd.olhar('voce');
+  modo = m; emJogo = true; atualizaStatus();
+  $('inicio').hidden = true; $('placar').hidden = false; $('jogadas').hidden = false;
+  jazz.iniciar();
+  (m === 'treino' ? treino() : jogarPraValer()).catch((e) => {
+    if (e === CANCEL) return;
+    console.error(e);
+    aviso('Algo deu errado nesta mão. Abra o Menu e comece de novo.');
+  });
+}
+function abreMenu() {
+  $('inicio').hidden = false;
+  $('bt-continuar').hidden = !emJogo;
+}
+
+// ---------- Ligações ----------
+$('bt-treino').addEventListener('click', () => iniciar('treino'));
+$('bt-valer').addEventListener('click', () => iniciar('valer'));
+$('bt-continuar').addEventListener('click', () => { $('inicio').hidden = true; });
+$('bt-menu').addEventListener('click', abreMenu);
+$('bt-maos').addEventListener('click', () => { if ($('modal-maos').hidden) abreMaos(); });
+$('bt-fechar-maos').addEventListener('click', fechaMaos);
+$('modal-maos').addEventListener('click', (e) => { if (e.target === $('modal-maos') && $('maos-treino').hidden) fechaMaos(); });
+$('bt-som').addEventListener('click', () => {
+  const on = !jazz.ligado;
+  jazz.setLigado(on);
+  if (on) jazz.iniciar();
+  $('bt-som').setAttribute('aria-pressed', String(on));
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('modal-maos').hidden) { fechaMaos(); return; }
+  if (trocaAtiva && /^[1-5]$/.test(e.key) && mesa && mesa.h) {
+    const c = mesa.h.hands[0][Number(e.key) - 1];
+    if (c) alternaCarta(cartas3D.get(c.id));
+  }
+});
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--alt-jogadas', `${$('jogadas').offsetHeight}px`);
+}).observe($('jogadas'));
+
+montaListaMaos();
+obterSample();
+atualizaStatus();
+
+if (document.fonts && document.fonts.load) {
+  await Promise.race([
+    Promise.all([document.fonts.load('800 64px "Alegreya Sans"'), document.fonts.load('400 64px "Limelight"')]).catch(() => {}),
+    sleep(2500),
+  ]);
+}
+try {
+  C = criaCena($('cena'), P);
+  C.aoQuadro = posicionaBalao;
+  C.canvas.addEventListener('pointerdown', (e) => { if (trocaAtiva) alternaCarta(C.cartaSob(e.clientX, e.clientY, gruposVoce())); });
+  C.canvas.addEventListener('pointermove', (e) => {
+    C.canvas.style.cursor = trocaAtiva && C.cartaSob(e.clientX, e.clientY, gruposVoce()) ? 'pointer' : '';
+  });
+  montaPilhas();
+  document.body.classList.add('pronto');
+  setTimeout(() => C.clawd.acenar(), 1400); // dá um tchauzinho quando a mesa aparece
+} catch (e) {
+  console.error(e);
+  $('erro3d').hidden = false;
+  $('erro3d').textContent += ' (' + (e && e.message || e) + ')';
+}
+})().catch((e) => {
+  console.error(e);
+  const el = document.getElementById('erro3d');
+  el.hidden = false;
+  el.textContent = 'O jogo travou ao abrir: ' + (e && e.message || e);
+});
+</script>
